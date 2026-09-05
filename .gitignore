@@ -1,0 +1,10 @@
+dist/
+artifacts/
+*.user
+*.log
+.vs/
+bin/
+obj/
+.env
+.env.*
+settings.xml
