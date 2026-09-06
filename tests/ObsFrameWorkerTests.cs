@@ -198,7 +198,7 @@ namespace NoteView
             using (var stream = new MemoryStream(png))
             {
                 BitmapFrame frame = BitmapDecoder.Create(stream, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad).Frames[0];
-                if (frame.PixelWidth != 1120 || frame.PixelHeight != 640) throw new Exception("Unexpected worker frame dimensions.");
+                if (frame.PixelWidth != ObsFrameRenderer.PixelWidth || frame.PixelHeight != ObsFrameRenderer.PixelHeight) throw new Exception("Unexpected worker frame dimensions.");
                 var source = new FormatConvertedBitmap(frame, PixelFormats.Pbgra32, null, 0);
                 var pixels = new byte[frame.PixelWidth * frame.PixelHeight * 4];
                 source.CopyPixels(pixels, frame.PixelWidth * 4, 0); return pixels;

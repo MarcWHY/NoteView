@@ -32,8 +32,8 @@ namespace NoteView
                 byte[] initial = WaitForFrame(output.Url, null);
                 Check(initial.Length > 1000, "initial HTTP output is a rendered PNG");
                 var initialImage = Decode(initial);
-                Check(initialImage.PixelWidth == 1120 && initialImage.PixelHeight == 640, "fixed OBS resolution");
-                var pixels = new byte[1120 * 640 * 4]; initialImage.CopyPixels(pixels, 1120 * 4, 0);
+                Check(initialImage.PixelWidth == ObsFrameRenderer.PixelWidth && initialImage.PixelHeight == ObsFrameRenderer.PixelHeight, "1.5x OBS resolution");
+                var pixels = new byte[ObsFrameRenderer.PixelWidth * ObsFrameRenderer.PixelHeight * 4]; initialImage.CopyPixels(pixels, ObsFrameRenderer.PixelWidth * 4, 0);
                 Check(pixels[3] == 0 && pixels.Where((b, i) => i % 4 == 3).Any(b => b > 0), "transparent background with visible score");
                 var timer = Field<DispatcherTimer>(main, "obsTimer");
                 timer.Start();

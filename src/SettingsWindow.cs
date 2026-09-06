@@ -53,7 +53,7 @@ namespace NoteView
             var obsActions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 9, 0, 6) };
             var copyObs = MainWindow.ButtonOf("复制 OBS 地址", delegate
             {
-                try { Clipboard.SetText(main.ObsOutputUrl); obsStatus.Text = "地址已复制 · 在 OBS 添加浏览器源，尺寸 1120 × 640"; }
+                try { Clipboard.SetText(main.ObsOutputUrl); obsStatus.Text = "地址已复制 · 在 OBS 添加浏览器源，尺寸 1680 × 960"; }
                 catch (System.Runtime.InteropServices.COMException) { obsAddress.SelectAll(); obsAddress.Focus(); obsStatus.Text = "请按 Ctrl+C 复制上方地址"; }
             });
             copyObs.Margin = new Thickness(0); obsActions.Children.Add(copyObs);
@@ -61,7 +61,7 @@ namespace NoteView
             content.Children.Add(obsActions);
             obsStatus = MainWindow.Label("", 11, MainWindow.BrushOf("#79E6C2"));
             obsStatus.TextWrapping = TextWrapping.Wrap; content.Children.Add(obsStatus);
-            var obsHelp = MainWindow.Label("OBS 添加「浏览器」源，粘贴上方地址，宽 1120、高 640。\n可最小化 NoteView，退出程序会停止输出。透明背景沿用当前设置。", 11,
+            var obsHelp = MainWindow.Label("OBS 添加「浏览器」源，粘贴上方地址，宽 1680、高 960。\n这是 1.5 倍清晰度输出，可在 OBS 中缩小到需要的尺寸。", 11,
                 MainWindow.BrushOf("#9BAEBB"), new Thickness(0, 6, 0, 8));
             obsHelp.TextWrapping = TextWrapping.Wrap; obsHelp.LineHeight = 19; content.Children.Add(obsHelp);
             RefreshObsControls();

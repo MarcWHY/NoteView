@@ -17,6 +17,9 @@ namespace NoteView
     {
         public const int Width = 1120;
         public const int Height = 640;
+        public const double RenderScale = 1.5;
+        public const int PixelWidth = 1680;
+        public const int PixelHeight = 960;
         private readonly Border surface;
         private readonly StaffView staff = new StaffView { ScoreOnly = true };
         private readonly StaffView keyboard = new StaffView { KeyboardOnly = true };
@@ -103,7 +106,10 @@ namespace NoteView
             surface.Measure(new Size(Width, Height));
             surface.Arrange(new Rect(0, 0, Width, Height));
             surface.UpdateLayout();
-            var bitmap = new RenderTargetBitmap(Width, Height, 96, 96, PixelFormats.Pbgra32);
+            // Render the logical 1120 x 640 layout at 1.5x pixel density. This gives
+            // OBS sharper edges while preserving responsive real-time animation.
+            var bitmap = new RenderTargetBitmap(PixelWidth, PixelHeight,
+                96 * RenderScale, 96 * RenderScale, PixelFormats.Pbgra32);
             bitmap.Render(surface);
             var encoder = new PngBitmapEncoder();
             encoder.Frames.Add(BitmapFrame.Create(bitmap));

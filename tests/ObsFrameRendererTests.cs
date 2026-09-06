@@ -36,7 +36,7 @@ namespace NoteView
                 for (int i = 3; i < empty.Length; i += 4)
                 { if (empty[i] > 0) visible++; else transparent++; }
                 Check(visible > 10000, "unparented score and keyboard render nonblank PNG pixels");
-                Check(transparent > ObsFrameRenderer.Width * ObsFrameRenderer.Height * .74, "background outside the taller opaque piano keys is transparent");
+                Check(transparent > ObsFrameRenderer.PixelWidth * ObsFrameRenderer.PixelHeight * .74, "background outside the taller opaque piano keys is transparent");
                 Check(empty[3] == 0 && empty[empty.Length - 1] == 0, "transparent frame corners have zero alpha");
 
                 var notes = new[] { new ActiveNote { Number = 85, Velocity = 127, IsHeld = true } };
@@ -110,11 +110,11 @@ namespace NoteView
             using (var stream = new MemoryStream(png))
             {
                 BitmapFrame frame = BitmapDecoder.Create(stream, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad).Frames[0];
-                Check(frame.PixelWidth == ObsFrameRenderer.Width && frame.PixelHeight == ObsFrameRenderer.Height,
-                    "every frame stays fixed at 1120 x 640");
+                Check(frame.PixelWidth == ObsFrameRenderer.PixelWidth && frame.PixelHeight == ObsFrameRenderer.PixelHeight,
+                    "every frame uses the 1.5x 1680 x 960 output resolution");
                 var source = new FormatConvertedBitmap(frame, PixelFormats.Pbgra32, null, 0);
-                var pixels = new byte[ObsFrameRenderer.Width * ObsFrameRenderer.Height * 4];
-                source.CopyPixels(pixels, ObsFrameRenderer.Width * 4, 0); return pixels;
+                var pixels = new byte[ObsFrameRenderer.PixelWidth * ObsFrameRenderer.PixelHeight * 4];
+                source.CopyPixels(pixels, ObsFrameRenderer.PixelWidth * 4, 0); return pixels;
             }
         }
         private static void Benchmark()
@@ -161,7 +161,9 @@ namespace NoteView
         private static long Delta(byte[] a, byte[] b, int firstRow, int lastRow, bool alphaOnly)
         {
             long sum = 0;
-            for (int i = firstRow * ObsFrameRenderer.Width * 4 + (alphaOnly ? 3 : 0); i < lastRow * ObsFrameRenderer.Width * 4; i += alphaOnly ? 4 : 1)
+            int firstPixelRow = (int)Math.Round(firstRow * ObsFrameRenderer.RenderScale);
+            int lastPixelRow = (int)Math.Round(lastRow * ObsFrameRenderer.RenderScale);
+            for (int i = firstPixelRow * ObsFrameRenderer.PixelWidth * 4 + (alphaOnly ? 3 : 0); i < lastPixelRow * ObsFrameRenderer.PixelWidth * 4; i += alphaOnly ? 4 : 1)
                 sum += Math.Abs(a[i] - b[i]);
             return sum;
         }
