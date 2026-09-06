@@ -28,6 +28,8 @@ namespace NoteView
                     !Field<System.Windows.Controls.TextBlock>(main, "chordAlternatives").IsVisible,
                     "harmony panel displays only its symbol");
                 Check(Field<TextBlock>(main, "chordSymbol").Text == "C△7", "demo MIDI to chord UI");
+                Check(Field<TextBlock>(main, "chordSymbol").FontFamily.Source.StartsWith("Cambria Math"),
+                    "desktop harmony uses the dedicated music-friendly typeface");
                 Check(Field<StaffView>(main, "staff").Notes.Count == 5, "demo MIDI to staff UI");
                 Invoke(main, "StopDemo");
                 Check(Field<StaffView>(main, "staff").Notes.Count == 0, "stop demo clears highlights");
@@ -70,7 +72,7 @@ namespace NoteView
                 Check(Field<StaffView>(main, "staff").KeySignatureFifths == 2, "D key signature reaches staff");
                 Check(keyChoice.SelectedIndex == keySelector.SelectedIndex, "main selector synchronizes open settings");
                 Check(state.GetActiveNotes().Select(n => n.Number).SequenceEqual(new[] { 60, 62, 65, 69, 73, 78 }), "changing key preserves actual sounding MIDI pitches");
-                Check(Field<TextBlock>(main, "noteList").Text.Contains("F4") && Field<TextBlock>(main, "noteList").Text.Contains("F#5"), "key-aware note names reach information panel");
+                Check(Field<TextBlock>(main, "noteList").Text.Contains("F4") && Field<TextBlock>(main, "noteList").Text.Contains("F♯5"), "key-aware note names reach information panel");
                 Render(main, "ui-d-major.png"); Render(settings, "ui-key-settings.png");
                 keyChoice.SelectedIndex = MainWindow.KeyOptionIndex(2, true);
                 Check(main.Settings.MinorKey && main.Settings.KeySignatureFifths == 2, "settings selector changes to relative B minor");

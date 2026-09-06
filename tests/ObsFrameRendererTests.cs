@@ -28,6 +28,8 @@ namespace NoteView
                 byte[] emptyPng = renderer.Render(settings, null, "", "", "", false);
                 byte[] empty = Decode(emptyPng);
                 Border surface = Field<Border>(renderer, "surface");
+                Check(Field<TextBlock>(renderer, "symbol").FontFamily.Source.StartsWith("Cambria Math"),
+                    "OBS harmony uses the same music-friendly typeface as the desktop");
                 Check(PresentationSource.FromVisual(surface) == null, "OBS surface is unparented and has no window handle");
                 Check(app.Windows.Count == 0, "frames render without any application window");
                 int visible = 0, transparent = 0;

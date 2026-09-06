@@ -23,8 +23,6 @@ namespace NoteView
         private readonly LayoutBoard board;
         private readonly TextBlock symbol, detail, alternate, pedal;
         private readonly Grid harmony;
-        private readonly Typeface harmonyTypeface = new Typeface(new FontFamily("Segoe UI, Microsoft YaHei UI"),
-            FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
 
         public ObsFrameRenderer()
         {
@@ -35,9 +33,10 @@ namespace NoteView
             harmony.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0) });
             harmony.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0) });
             symbol = Text(36);
+            symbol.FontFamily = new FontFamily("Cambria Math, Cambria, Segoe UI Symbol");
             symbol.TextTrimming = TextTrimming.None;
             symbol.TextWrapping = TextWrapping.NoWrap;
-            symbol.FontWeight = FontWeights.SemiBold;
+            symbol.FontWeight = FontWeights.Normal;
             symbol.VerticalAlignment = VerticalAlignment.Center;
             symbol.Margin = new Thickness(0, 0, 18, 0);
             harmony.Children.Add(symbol);

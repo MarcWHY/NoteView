@@ -200,7 +200,8 @@ namespace NoteView
             harmony.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0) });
             var chordLeft = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
             chordSymbol = Label("", 30, Mint, new Thickness(0, 2, 0, 0));
-            chordSymbol.FontWeight = FontWeights.SemiBold;
+            chordSymbol.FontFamily = new FontFamily("Cambria Math, Cambria, Segoe UI Symbol");
+            chordSymbol.FontWeight = FontWeights.Normal;
             chordSymbol.TextWrapping = TextWrapping.NoWrap;
             chordSymbol.HorizontalAlignment = HorizontalAlignment.Left;
             chordLeft.Children.Add(chordSymbol); harmony.Children.Add(chordLeft);
