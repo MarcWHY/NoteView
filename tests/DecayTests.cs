@@ -23,8 +23,8 @@ namespace NoteView
                     now = i * .1; var n = state.GetActiveNotes()[0];
                     Check(n.Brightness <= previous && n.Brightness >= .14, "held decay monotonic with floor");
                     Check(n.Velocity == 105, "velocity unchanged by age"); previous = n.Brightness;
-                    if (i == 2) Check(n.Brightness > .34 && n.Brightness < .38, "new strike separates clearly within 200 ms");
-                    if (i == 5) Check(n.Brightness > .26 && n.Brightness < .28, "fast attack settles into a slower held tail");
+                    if (i == 2) Check(n.Brightness > .47 && n.Brightness < .50, "held strike remains prominent within 200 ms");
+                    if (i == 5) Check(n.Brightness > .29 && n.Brightness < .31, "slower attack settles into the held tail");
                     if (i == 30) Check(n.Brightness > .21, "held notes retain a visible slow tail after three seconds");
                 }
                 Check(previous < .143, "held level approaches floor");

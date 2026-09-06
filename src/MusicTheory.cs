@@ -37,15 +37,17 @@ namespace NoteView
         {
             age = Math.Max(0, age);
             // Keep the short strike highlight, but let physically held notes fade slowly.
-            return .14 + .72 * Math.Exp(-age / .10) + .14 * Math.Exp(-Math.Max(0, tailAge) / 4.8);
+            return .14 + .72 * Math.Exp(-age / .16) + .14 * Math.Exp(-Math.Max(0, tailAge) / 4.8);
         }
         private double Level(int channel, int number, double now)
         {
             if (held[channel, number]) return HeldLevel(now - attack[channel, number]);
             double age = now - attack[channel, number];
             double releasedAge = Math.Max(0, now - release[channel, number]);
-            // Accelerate only the tail after release, continuously from its current level.
-            double value = Envelope(age, age + 2 * releasedAge) * Math.Exp(-releasedAge / 1.8);
+            // After release, accelerate both envelope stages continuously from the
+            // current level so pedal-retained notes remain distinct from held notes.
+            double releasedEnvelopeAge = age + 2 * releasedAge;
+            double value = Envelope(releasedEnvelopeAge, releasedEnvelopeAge) * Math.Exp(-releasedAge / 1.8);
             return value < .003 ? 0 : value;
         }
 
