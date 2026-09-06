@@ -31,14 +31,21 @@ namespace NoteView
         public NoteState(Func<double> seconds) { clock = seconds; }
         private static double HeldLevel(double age)
         {
+            return Envelope(age, age);
+        }
+        private static double Envelope(double age, double tailAge)
+        {
             age = Math.Max(0, age);
-            // A short attack highlight distinguishes new strikes from held notes.
-            return .14 + .72 * Math.Exp(-age / .10) + .14 * Math.Exp(-age / 1.6);
+            // Keep the short strike highlight, but let physically held notes fade slowly.
+            return .14 + .72 * Math.Exp(-age / .10) + .14 * Math.Exp(-Math.Max(0, tailAge) / 4.8);
         }
         private double Level(int channel, int number, double now)
         {
             if (held[channel, number]) return HeldLevel(now - attack[channel, number]);
-            double value = HeldLevel(now - attack[channel, number]) * Math.Exp(-Math.Max(0, now - release[channel, number]) / 1.8);
+            double age = now - attack[channel, number];
+            double releasedAge = Math.Max(0, now - release[channel, number]);
+            // Accelerate only the tail after release, continuously from its current level.
+            double value = Envelope(age, age + 2 * releasedAge) * Math.Exp(-releasedAge / 1.8);
             return value < .003 ? 0 : value;
         }
 

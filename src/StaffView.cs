@@ -25,6 +25,7 @@ namespace NoteView
         private double scoreScale = 1;
         private double scoreOffsetX, scoreOffsetY;
         private double keyboardScale = 1, keyboardOffsetX, keyboardOffsetY;
+        private readonly Dictionary<int, HeadSlot> stableHeadSlots = new Dictionary<int, HeadSlot>();
 
         public IList<ActiveNote> Notes { get; set; }
         public bool ScoreOnly { get; set; }
@@ -396,6 +397,11 @@ namespace NoteView
 
         private List<NotePlacement> PlaceNotes(Layout layout, IDictionary<int, ActiveNote> active)
         {
+            var ended = new List<int>();
+            foreach (int number in stableHeadSlots.Keys)
+                if (!active.ContainsKey(number)) ended.Add(number);
+            foreach (int number in ended) stableHeadSlots.Remove(number);
+
             double offset = layout.UnisonOffset;
             double maximumOffset = Math.Max(84, layout.Spacing * 8.4);
             while (true)
@@ -420,7 +426,14 @@ namespace NoteView
                     }
                     if (collision) break;
                 }
-                if (!collision || offset >= maximumOffset) return placements;
+                if (!collision || offset >= maximumOffset)
+                {
+                    foreach (NotePlacement placement in placements)
+                        if (!stableHeadSlots.ContainsKey(placement.Note.Number))
+                            stableHeadSlots[placement.Note.Number] = new HeadSlot {
+                                GroupOffset = placement.HeadGroupX - layout.NoteX, Column = placement.Column };
+                    return placements;
+                }
                 // Expand only when the actual played neighbours need extra room.
                 // The staff and its main column remain stationary.
                 offset = Math.Min(maximumOffset, offset + 2);
@@ -440,6 +453,9 @@ namespace NoteView
             List<ActiveNote> sorted = new List<ActiveNote>(active.Values);
             sorted.Sort(delegate(ActiveNote a, ActiveNote b)
             {
+                bool aStable = stableHeadSlots.ContainsKey(a.Number);
+                bool bStable = stableHeadSlots.ContainsKey(b.Number);
+                if (aStable != bStable) return aStable ? -1 : 1;
                 int comparison = DiatonicStep(a.Number).CompareTo(DiatonicStep(b.Number));
                 if (comparison != 0) return comparison;
                 // Keep the signature's diatonic note on the main column when its
@@ -454,21 +470,28 @@ namespace NoteView
             {
                 NotatedPitch pitch = KeySignature.Spell(note.Number, KeySignatureFifths, Flats);
                 bool chromaticUnison = KeySignatureFifths != 0 && stepCounts[pitch.Step] > 1;
+                HeadSlot stable;
+                bool hasStableSlot = stableHeadSlots.TryGetValue(note.Number, out stable);
                 NotePlacement placement = new NotePlacement { Note = note, Y = PitchY(note.Number, layout),
-                    HeadGroupX = layout.NoteX + (chromaticUnison && !pitch.InKey ? unisonOffset : 0),
+                    HeadGroupX = hasStableSlot ? layout.NoteX + stable.GroupOffset :
+                        layout.NoteX + (chromaticUnison && !pitch.InKey ? unisonOffset : 0),
                     AccidentalText = chromaticUnison ? (pitch.Alteration > 0 ? "♯" : pitch.Alteration < 0 ? "♭" : "♮") : pitch.Accidental };
-                int column = 0;
+                int column = hasStableSlot ? stable.Column : 0;
+                int attempt = 0;
                 while (true)
                 {
+                    if (!hasStableSlot)
+                        column = attempt == 0 ? 0 : (attempt % 2 == 1 ? (attempt + 1) / 2 : -(attempt / 2));
                     placement.X = placement.HeadGroupX + column * (headWidth + 1.2);
+                    placement.Column = column;
                     // Bounds conservatively contain the rotated filled ellipse, with a small gap.
                     placement.HeadBounds = new Rect(placement.X - headWidth * .5,
                         placement.Y - headWidth * .38, headWidth, headWidth * .76);
                     bool collision = false;
                     foreach (NotePlacement previous in result)
                         if (placement.HeadBounds.IntersectsWith(previous.HeadBounds)) { collision = true; break; }
-                    if (!collision) break;
-                    column++;
+                    if (!collision || hasStableSlot) break;
+                    attempt++;
                 }
                 result.Add(placement);
             }
@@ -493,6 +516,9 @@ namespace NoteView
                     Rect bounds = new Rect(signRight - width - column * (width + 3), y, width, placement.Accidental.Height);
                     Rect padded = bounds; padded.Inflate(1, 1);
                     bool collision = false;
+                    foreach (NotePlacement head in result)
+                        if (padded.IntersectsWith(head.HeadBounds)) { collision = true; break; }
+                    if (collision) continue;
                     foreach (Rect previous in signs)
                         if (padded.IntersectsWith(previous)) { collision = true; break; }
                     if (collision) continue;
@@ -690,9 +716,16 @@ namespace NoteView
         {
             public ActiveNote Note;
             public double X, Y, HeadGroupX;
+            public int Column;
             public string AccidentalText;
             public Rect HeadBounds, AccidentalBounds;
             public FormattedText Accidental;
+        }
+
+        private sealed class HeadSlot
+        {
+            public double GroupOffset;
+            public int Column;
         }
     }
 }

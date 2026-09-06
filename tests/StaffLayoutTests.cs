@@ -104,6 +104,31 @@ namespace NoteView
             IList seconds = (IList)Invoke(view, "PlaceNotes", layout, active);
             Check(Field<double>(seconds[0], "X") != Field<double>(seconds[1], "X"), "unisons or seconds use different columns");
 
+            active.Clear(); active[62] = Note(62);
+            IList beforeNeighbour = (IList)Invoke(view, "PlaceNotes", layout, active);
+            double stableX = Field<double>(beforeNeighbour[0], "X");
+            active[61] = Note(61);
+            IList afterNeighbour = (IList)Invoke(view, "PlaceNotes", layout, active);
+            foreach (object placement in afterNeighbour)
+                if (Field<ActiveNote>(placement, "Note").Number == 62)
+                    Check(Math.Abs(Field<double>(placement, "X") - stableX) < .001,
+                        "an existing note does not move when a neighbouring note appears");
+
+            if (fifths != 0)
+            {
+                int signaturePitch = fifths > 0 ? 66 : 70;
+                int alteredNeighbour = fifths > 0 ? 65 : 71;
+                active.Clear(); active[signaturePitch] = Note(signaturePitch);
+                IList beforeUnison = (IList)Invoke(view, "PlaceNotes", layout, active);
+                stableX = Field<double>(beforeUnison[0], "X");
+                active[alteredNeighbour] = Note(alteredNeighbour);
+                IList afterUnison = (IList)Invoke(view, "PlaceNotes", layout, active);
+                foreach (object placement in afterUnison)
+                    if (Field<ActiveNote>(placement, "Note").Number == signaturePitch)
+                        Check(Math.Abs(Field<double>(placement, "X") - stableX) < .001,
+                            "an existing signature note does not move when its altered unison appears");
+            }
+
             active.Clear(); for (int number = first; number <= last; number++) active[number] = Note(number);
             IList dense = (IList)Invoke(view, "PlaceNotes", layout, active);
             IList signature = (IList)Field<object>(layout, "SignaturePlacements");

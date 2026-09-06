@@ -24,9 +24,10 @@ namespace NoteView
                     Check(n.Brightness <= previous && n.Brightness >= .14, "held decay monotonic with floor");
                     Check(n.Velocity == 105, "velocity unchanged by age"); previous = n.Brightness;
                     if (i == 2) Check(n.Brightness > .34 && n.Brightness < .38, "new strike separates clearly within 200 ms");
-                    if (i == 5) Check(n.Brightness > .23 && n.Brightness < .27, "fast attack settles into a slower tail");
+                    if (i == 5) Check(n.Brightness > .26 && n.Brightness < .28, "fast attack settles into a slower held tail");
+                    if (i == 30) Check(n.Brightness > .21, "held notes retain a visible slow tail after three seconds");
                 }
-                Check(previous < .141, "held floor reached");
+                Check(previous < .143, "held level approaches floor");
                 state.Process(0xB0, 64, 127); state.Process(0x80, 65, 0);
                 Check(Math.Abs(previous - state.GetActiveNotes()[0].Brightness) < 1e-10, "release is continuous");
                 for (int i = 1; i <= 120; i++)
@@ -57,6 +58,14 @@ namespace NoteView
                 Check(Math.Abs(atRelease - state.GetActiveNotes()[0].Brightness) < 1e-10, "early release stays continuous");
                 now = .2;
                 Check(state.GetActiveNotes()[0].Brightness < .36, "early pedal release retains fast attack decay");
+                state.Clear(); now = 0;
+                state.Process(0x90, 60, 100); state.Process(0x90, 64, 100); state.Process(0xB0, 64, 127);
+                now = .5; double beforeRelease = state.GetActiveNotes().First(n => n.Number == 64).Brightness;
+                state.Process(0x80, 64, 0);
+                Check(Math.Abs(beforeRelease - state.GetActiveNotes().First(n => n.Number == 64).Brightness) < 1e-10, "slow held tail releases without a brightness jump");
+                now = 3;
+                var comparison = state.GetActiveNotes();
+                Check(comparison.First(n => n.Number == 60).Brightness > 4 * comparison.First(n => n.Number == 64).Brightness, "held note clearly outlasts pedal note from same strike");
                 app.Shutdown(); Console.WriteLine("DecayTests PASS: " + checks); return 0;
             }
             catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
