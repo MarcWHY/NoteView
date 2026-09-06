@@ -19,6 +19,8 @@ namespace NoteView
             try
             {
                 var app = new Application();
+                if (args.Length > 0 && args[0] == "--benchmark-cache")
+                { BenchmarkAtmosphereCache(); app.Shutdown(); return 0; }
                 if (args.Length > 0 && args[0] == "--benchmark")
                 {
                     Benchmark(); app.Shutdown(); return 0;
@@ -96,6 +98,7 @@ namespace NoteView
                 settings.Background = "invalid"; settings.Accent = null;
                 Check(Decode(renderer.Render(settings, notes, null, null, null, false)).Length == empty.Length,
                     "invalid colors and empty harmony use safe defaults");
+                TestAtmosphereAndNoteTint();
                 app.Shutdown();
                 Console.WriteLine("ObsFrameRendererTests: PASS (" + checks + " assertions); previews in artifacts/obs-renderer-tests.");
                 return 0;
@@ -117,13 +120,68 @@ namespace NoteView
                 source.CopyPixels(pixels, ObsFrameRenderer.PixelWidth * 4, 0); return pixels;
             }
         }
+        private static void TestAtmosphereAndNoteTint()
+        {
+            var renderer = new ObsFrameRenderer();
+            var settings = new AppSettings { BackgroundOpacity = 0, GhostNotes = false, AtmosphereOpacity = 0,
+                HarmonyTint = "#EDBC70", HarmonyMemoryTint = "#709BDD", HarmonyRelationTint = "#E273BB",
+                HarmonyHistoryStrength = .8, HarmonyVariationStrength = .6, HarmonyAtmosphereStrength = .9 };
+            byte[] baseline = Decode(renderer.Render(settings, null, "Cmaj7", "", "", false));
+            TextBlock label = Field<TextBlock>(renderer, "symbol");
+            var gradient = label.Foreground as LinearGradientBrush;
+            Check(gradient != null && gradient.IsFrozen && gradient.GradientStops.Count >= 3 &&
+                gradient.GradientStops[0].Color != gradient.GradientStops[2].Color,
+                "chord label carries a frozen gradient of historical and current harmony colors");
+            Check(label.HorizontalAlignment == HorizontalAlignment.Left && label.ActualWidth < 300,
+                "harmony gradient spans the visible text instead of unused board width");
+            settings.AtmosphereOpacity = 12;
+            byte[] glowPng = renderer.Render(settings, null, "Cmaj7", "", "", false);
+            byte[] glow = Decode(glowPng);
+            int[] corners = { 3, (ObsFrameRenderer.PixelWidth - 1) * 4 + 3,
+                (ObsFrameRenderer.PixelHeight - 1) * ObsFrameRenderer.PixelWidth * 4 + 3, glow.Length - 1 };
+            foreach (int corner in corners) Check(glow[corner] == 0, "active atmosphere keeps each transparent frame corner at alpha zero");
+            int litBackground = 0, strongestBackground = 0;
+            for (int i = 3; i < (int)(400 * ObsFrameRenderer.RenderScale) * ObsFrameRenderer.PixelWidth * 4; i += 4)
+                if (baseline[i] == 0 && glow[i] > 0) { litBackground++; strongestBackground = Math.Max(strongestBackground, glow[i]); }
+            Check(litBackground > 10000 && strongestBackground >= 15 && strongestBackground <= 55,
+                "transparent score background receives a broad but faint local atmosphere, peak=" + strongestBackground);
+            Save("obs-harmonic-atmosphere-transparent.png", glowPng);
+            settings.BackgroundOpacity = 100;
+            Save("obs-harmonic-atmosphere-dark.png", renderer.Render(settings, null, "Cmaj7", "", "", false));
+            settings.BackgroundOpacity = 0;
+            settings.AtmosphereOpacity = 0;
+            Check(Delta(baseline, Decode(renderer.Render(settings, null, "Cmaj7", "", "", false)), 0, ObsFrameRenderer.Height, false) == 0,
+                "disabling atmosphere restores the exact transparent baseline");
+            settings.AtmosphereOpacity = 12; settings.HarmonyAtmosphereStrength = 0;
+            Check(Delta(baseline, Decode(renderer.Render(settings, null, "Cmaj7", "", "", false)), 0, ObsFrameRenderer.Height, false) == 0,
+                "silent atmosphere fades all the way to the original transparent baseline");
+
+            var notes = new[] { new ActiveNote { Number = 62, Velocity = 100, IsHeld = true },
+                new ActiveNote { Number = 68, Velocity = 100, IsHeld = true } };
+            byte[] plain = Decode(renderer.Render(settings, notes, "Cmaj7", "", "", false));
+            notes[0].HasTint = notes[1].HasTint = true;
+            notes[0].TintR = 92; notes[0].TintG = 218; notes[0].TintB = 224;
+            notes[1].TintR = 239; notes[1].TintG = 112; notes[1].TintB = 174;
+            byte[] tinted = Decode(renderer.Render(settings, notes, "Cmaj7", "", "", false));
+            Check(Delta(plain, tinted, 0, 400, false) > 1000 && Delta(plain, tinted, 400, 540, false) > 1000,
+                "distinct note tints color both staff heads/accidentals and matching piano keys");
+            Check(Delta(plain, tinted, 0, ObsFrameRenderer.Height, true) == 0,
+                "harmonic hue changes preserve velocity/decay alpha and existing note positions");
+            notes[0].HasTint = notes[1].HasTint = false;
+            Check(Delta(plain, Decode(renderer.Render(settings, notes, "Cmaj7", "", "", false)), 0, ObsFrameRenderer.Height, false) == 0,
+                "notes without an explicit tint retain the global accent fallback");
+        }
         private static void Benchmark()
         {
+            foreach (bool atmosphere in new[] { false, true })
             foreach (bool transparent in new[] { true, false })
             foreach (bool dense in new[] { false, true })
             {
                 var renderer = new ObsFrameRenderer();
                 var settings = new AppSettings { BackgroundOpacity = transparent ? 0 : 96,
+                    AtmosphereOpacity = atmosphere ? 12 : 0, HarmonyAtmosphereStrength = 1,
+                    HarmonyTint = "#EDBC70", HarmonyMemoryTint = "#709BDD", HarmonyRelationTint = "#E273BB",
+                    HarmonyHistoryStrength = .75, HarmonyVariationStrength = .65,
                     KeySignatureFifths = 2, GhostNotes = true };
                 var notes = new List<ActiveNote>();
                 int[] normal = { 38, 50, 60, 62, 65, 66, 69, 85 };
@@ -140,7 +198,10 @@ namespace NoteView
                     {
                         notes[i].Velocity = 30 + (i * 19 + (frame + 5) * 7) % 98;
                         notes[i].IsHeld = (i + frame + 5) % 3 == 0;
+                        notes[i].HasTint = true; notes[i].TintR = (byte)(110 + i % 3 * 55);
+                        notes[i].TintG = (byte)(190 - i % 3 * 25); notes[i].TintB = (byte)(120 + i % 3 * 55);
                     }
+                    settings.HarmonyHistoryStrength = .75 - Math.Max(0, frame) / 100.0;
                     stopwatch.Restart();
                     byte[] png = renderer.Render(settings, notes, "Dmaj13", "D 大十三和弦", "也可能是 Bm11/D", true);
                     stopwatch.Stop();
@@ -152,10 +213,40 @@ namespace NoteView
                 foreach (double value in milliseconds) total += value;
                 milliseconds.Sort();
                 Console.WriteLine("OBS Render benchmark: " + (dense ? "dense 88-note, 2/3 sustained" : "normal 8-note, 2/3 sustained") +
-                    ", background=" + settings.BackgroundOpacity + "%, frames=30, totalMs=" + total.ToString("F1") +
+                    ", background=" + settings.BackgroundOpacity + "%, atmosphere=" + settings.AtmosphereOpacity + "%, frames=30, totalMs=" + total.ToString("F1") +
                     ", avgMs=" + (total / 30).ToString("F2") + ", medianMs=" + ((milliseconds[14] + milliseconds[15]) / 2).ToString("F2") +
                     ", p95Ms=" + milliseconds[28].ToString("F2") + ", maxMs=" + milliseconds[29].ToString("F2") +
                     ", PNG avgBytes=" + (bytes / 30) + ", minBytes=" + minBytes + ", maxBytes=" + maxBytes);
+                var probe = new RenderTargetBitmap(ObsFrameRenderer.PixelWidth, ObsFrameRenderer.PixelHeight,
+                    96 * ObsFrameRenderer.RenderScale, 96 * ObsFrameRenderer.RenderScale, PixelFormats.Pbgra32);
+                stopwatch.Restart(); probe.Render(Field<Border>(renderer, "surface")); stopwatch.Stop();
+                double drawMilliseconds = stopwatch.Elapsed.TotalMilliseconds;
+                var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(probe));
+                stopwatch.Restart(); using (var stream = new MemoryStream()) encoder.Save(stream); stopwatch.Stop();
+                Console.WriteLine("Breakdown: rasterMs=" + drawMilliseconds.ToString("F2") + ", pngMs=" + stopwatch.Elapsed.TotalMilliseconds.ToString("F2"));
+            }
+        }
+        private static void BenchmarkAtmosphereCache()
+        {
+            foreach (bool atmosphere in new[] { false, true })
+            foreach (bool steady in new[] { true, false })
+            {
+                var renderer = new ObsFrameRenderer();
+                var settings = new AppSettings { BackgroundOpacity = 0, AtmosphereOpacity = atmosphere ? 12 : 0, HarmonyAtmosphereStrength = 1,
+                    HarmonyTint = "#EDBC70", HarmonyMemoryTint = "#709BDD", HarmonyRelationTint = "#E273BB",
+                    HarmonyHistoryStrength = .75, HarmonyVariationStrength = .65, KeySignatureFifths = 2, GhostNotes = true };
+                var notes = new List<ActiveNote>();
+                foreach (int number in new[] { 38, 50, 60, 62, 65, 66, 69, 85 }) notes.Add(new ActiveNote { Number = number, Velocity = 90 });
+                double total = 0; var watch = new Stopwatch();
+                for (int frame = -5; frame < 30; frame++)
+                {
+                    for (int i = 0; i < notes.Count; i++) notes[i].IsHeld = (i + frame + 5) % 3 == 0;
+                    if (!steady) settings.HarmonyHistoryStrength = .75 - Math.Max(0, frame) / 100.0;
+                    watch.Restart(); renderer.Render(settings, notes, "Dmaj13", "", "", true); watch.Stop();
+                    if (frame >= 0) total += watch.Elapsed.TotalMilliseconds;
+                }
+                Console.WriteLine("Atmosphere cache: " + (atmosphere ? "quarter-res" : "disabled") +
+                    ", " + (steady ? "steady" : "changing") + ", avgMs=" + (total / 30).ToString("F2"));
             }
         }
         private static long Delta(byte[] a, byte[] b, int firstRow, int lastRow, bool alphaOnly)

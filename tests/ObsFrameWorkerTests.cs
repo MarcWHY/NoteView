@@ -71,18 +71,30 @@ namespace NoteView
                             new[] { new ActiveNote { Number = 30 + index, Velocity = 1, IsHeld = true } },
                             "OBSOLETE " + index, "", "", false);
                     var settings = new AppSettings { Background = "#13579B", BackgroundOpacity = 47, HarmonyTint = "#E9B471",
+                        HarmonyMemoryTint = "#709BDD", HarmonyRelationTint = "#E273BB", HarmonyHistoryStrength = .7,
+                        HarmonyVariationStrength = .58, HarmonyAtmosphereStrength = .83, AtmosphereOpacity = 18,
                         GhostNotes = false, KeySignatureFifths = 2, StaffScale = 1.25,
                         StaffOffsetX = 64, StaffOffsetY = -12 };
-                    var notes = new List<ActiveNote> { new ActiveNote { Number = 65, Velocity = 91, IsHeld = true, Brightness = .37 },
-                        new ActiveNote { Number = 66, Velocity = 39, IsHeld = false } };
+                    var notes = new List<ActiveNote> { new ActiveNote { Number = 65, Velocity = 91, IsHeld = true, Brightness = .37,
+                        StrikeId = 17, HasTint = true, TintR = 104, TintG = 159, TintB = 233 },
+                        new ActiveNote { Number = 66, Velocity = 39, IsHeld = false,
+                        StrikeId = 19, HasTint = true, TintR = 235, TintG = 118, TintB = 182 } };
                     var expectedSettings = settings.Snapshot();
-                    var expectedNotes = new[] { new ActiveNote { Number = 65, Velocity = 91, IsHeld = true, Brightness = .37 },
-                        new ActiveNote { Number = 66, Velocity = 39, IsHeld = false } };
+                    var expectedNotes = new[] { new ActiveNote { Number = 65, Velocity = 91, IsHeld = true, Brightness = .37,
+                        StrikeId = 17, HasTint = true, TintR = 104, TintG = 159, TintB = 233 },
+                        new ActiveNote { Number = 66, Velocity = 39, IsHeld = false,
+                        StrikeId = 19, HasTint = true, TintR = 235, TintG = 118, TintB = 182 } };
                     worker.Submit(settings, notes, "FINAL", "snapshot", "held + pedal", true);
                     settings.HarmonyTint = "#FF0011"; settings.Background = "#FF0000"; settings.BackgroundOpacity = 100;
+                    settings.HarmonyMemoryTint = "#FFFFFF"; settings.HarmonyRelationTint = "#000000";
+                    settings.HarmonyHistoryStrength = 0; settings.HarmonyVariationStrength = 0;
+                    settings.HarmonyAtmosphereStrength = 0; settings.AtmosphereOpacity = 0;
                     settings.GhostNotes = true; settings.KeySignatureFifths = -7;
                     settings.StaffScale = 2; settings.StaffOffsetX = -600;
                     notes[0].Brightness = .99; notes[0].Number = 108; notes[0].Velocity = 1; notes[0].IsHeld = false;
+                    notes[0].HasTint = false; notes[0].TintR = 0; notes[0].TintG = 0; notes[0].TintB = 0;
+                    notes[0].StrikeId = 100;
+                    notes[1].HasTint = false; notes[1].TintR = 255; notes[1].TintG = 255; notes[1].TintB = 255;
                     notes[1].IsHeld = true; notes.Clear();
                     release.Set();
                     Check(ready.WaitOne(20000) && finalPng != null, "latest pending frame is published");
@@ -93,7 +105,7 @@ namespace NoteView
                         "FINAL", "snapshot", "held + pedal", true);
                     File.WriteAllBytes("artifacts/worker-expected.png", expected);
                     File.WriteAllBytes("artifacts/worker-actual.png", finalPng);
-                    Check(SamePixels(expected, finalPng), "Submit snapshots mutable settings list and individual note objects");
+                    Check(SamePixels(expected, finalPng), "Submit snapshots settings, harmonic history/atmosphere and distinct individual note colors");
                     CheckDisposed(worker, thread);
                     Check(dispatcher != null && dispatcher.HasShutdownFinished, "worker shuts down its owned WPF dispatcher");
                 }

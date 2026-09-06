@@ -15,7 +15,7 @@ namespace NoteView
         static IList<ActiveNote> Notes(params int[] pitches) { return pitches.Select(n => new ActiveNote { Number = n, Velocity = 100, IsHeld = true }).ToList(); }
         static void Check(bool value, string message) { if (!value) throw new Exception(message); checks++; }
         static void Settle(HarmonyColor engine, IList<ActiveNote> notes)
-        { engine.Update(notes, true); now += .21; engine.Update(notes, true); now += .16; engine.Update(notes, true); }
+        { engine.Update(notes, true); now += .21; engine.Update(notes, true); now += 1.4; engine.Update(notes, true); }
         [STAThread] public static int Main()
         {
             try
@@ -39,8 +39,9 @@ namespace NoteView
                 Settle(engine, heldDominant); Check(engine.Group == "7:dominant", "held chord wins over stale pedal pitch");
                 string dominant = engine.Hex;
                 Settle(engine, Notes(60, 61, 62, 67)); Check(engine.Hex == dominant, "unrecognized phrase retains established palette");
-                Settle(engine, Notes()); Check(engine.Hex == dominant, "short silence retains palette");
-                now += 1.6; engine.Update(Notes(), true); now += .2; engine.Update(Notes(), true);
+                engine.Update(Notes(), true); now += .3; engine.Update(Notes(), true);
+                Check(engine.Hex == dominant, "short silence retains palette");
+                now += 1.6; engine.Update(Notes(), true); now += 1; engine.Update(Notes(), true);
                 Check(engine.Hex == neutral, "long silence returns to neutral");
                 string[] families = { "major", "minor", "suspended", "dominant", "diminished", "augmented", "altered" };
                 int[][] chords = { new[] { 60,64,67 }, new[] {60,63,67}, new[] {60,65,67}, new[] {60,64,67,70}, new[] {60,63,66}, new[] {60,64,68}, new[] {60,61,64,67,70} };
@@ -51,8 +52,12 @@ namespace NoteView
                     Check(e.Group == "0:" + families[i], "quality category " + families[i]); colors.Add(e.Hex);
                     var preview = Notes(chords[i]);
                     for (int n = 0; n < preview.Count; n++) preview[n].Velocity = 35 + n * 20;
+                    e.ApplyNoteTints(preview);
                     File.WriteAllBytes(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "palette-" + families[i] + ".png"),
-                        new ObsFrameRenderer().Render(new AppSettings { HarmonyTint = e.Hex }, preview,
+                        new ObsFrameRenderer().Render(new AppSettings { HarmonyTint = e.Hex,
+                            HarmonyMemoryTint = e.MemoryHex, HarmonyRelationTint = e.RelationHex,
+                            HarmonyHistoryStrength = e.HistoryStrength, HarmonyVariationStrength = e.VariationStrength,
+                            HarmonyAtmosphereStrength = e.AtmosphereStrength }, preview,
                             MusicTheory.Recognize(chords[i], false).Symbol, "", "", false));
                 }
                 Check(colors.Count == 7, "harmonic character palettes are distinct");

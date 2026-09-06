@@ -1,6 +1,6 @@
 ﻿# NoteView · 钢琴桌面五线谱
 
-一个 Windows 独立桌面挂件。连接 USB MIDI 电钢琴后，居中的竖列大谱表和下方琴键同步点亮；和弦决定整体染色，击键力度决定亮度，亮度随后自然衰减。
+一个 Windows 独立桌面挂件。连接 USB MIDI 电钢琴后，竖列大谱表和琴键同步点亮；和声基底、变化音与前一和声的余韵共同决定色彩，击键力度决定亮度，并随时间自然衰减。
 
 ## 直接使用
 
@@ -10,11 +10,13 @@ Windows x64，需要 .NET Framework 4.8 和可用的 MIDI 输入设备。
 
 1. 启动后自动连接第一个可用 MIDI 输入；如果有多个设备，在左上角选择电钢琴。
 2. 直接弹琴。音符按音高集中在同一竖列，不滚动；相邻二度或同位置的音符会小幅错开，避免遮挡。按住的音从力度对应的击键亮度自然衰减，最低保留该亮度的 14%；踩着踏板松键时，从当时亮度继续指数淡出到消失，并保留柔和模糊效果。重复击键重新点亮。颜色跟随当前稳定和声，同组和声保持配色，确认换和弦后平滑切换。
-3. 点击 **设置**：自选背景颜色，或者把背景不透明度调到 **0% / 全透明**。力度只控制亮度；大和弦偏暖金，小和弦偏冷蓝，挂留偏青绿，属和弦偏珊瑚橙，减、增及变化和弦偏紫／玫红。具体规则见 [和声配色](docs/HARMONY_COLORS.md)。
+3. 点击 **设置**：自选背景颜色，把背景不透明度调到 **0%** 可保留透明底上的局部柔光；点击 **全透明** 会同时关闭底色和柔光。力度只控制亮度；大和弦偏暖金，小和弦偏冷蓝，挂留偏青绿，属和弦偏珊瑚橙，减、增及变化和弦偏紫／玫红。具体规则见 [和声配色](docs/HARMONY_COLORS.md)。
 4. 浅色桌面使用「深色谱线与文字」。点击 **纯谱面** 隐藏 MIDI 工具栏；拖动窗口顶部移动，拖动右下角调整尺寸。
 5. **演示** 可在不弹琴时查看效果，不产生声音。收到实际琴键 Note On 后自动退出演示。
 6. 在谱面上方的调式下拉框，或 **设置 → 默认调式** 中选择调式。支持 15 种调号对应的大调、小调，共 30 个选项；选择后即时生效并保存。
 7. 点击窗口顶部的 **调整布局**：绿色矩形是整个布局画布，五线谱、键盘和和弦各有独立边框。拖动对应框内区域移动控件，拖右下角手柄或滚轮等比例缩放；点击 **完成调整** 或按 Esc 退出。三个控件均可移动到画布的其他区域，边框会限制在画布内。布局自动保存，OBS 使用相同的位置和大小。设置中也可分别精确调整、复位。
+
+和声配色有时间记忆：变化音可以独立染色，基底里的共同音保持连续，换和弦时旧色以渐变的形式短暂保留。背景同步出现很淡的局部柔光；在 **设置 → 和声氛围强度** 中调整，设为 0 可关闭。更多示例见 [和声配色](docs/HARMONY_COLORS.md)。
 
 ## 常用操作
 
@@ -84,6 +86,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\TestObsRenderer.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\TestObsWorker.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\TestObsOutputServer.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\TestObsIntegration.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\TestHarmonyHistory.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\ListMidi.ps1
 ```
 
@@ -110,7 +113,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\ListMidi.ps1
 
 ### 基底与和弦记号
 
-和弦名称与染色共享和声基底，明确延留的支撑音会保护当前基底，孤立经过音不立即引发重新命名。新配音或支撑音淡出后允许换基底。界面使用 ♭、♯、△、°、ø、+ 等音乐记号，保持单行固定字号。
+和弦名称与染色共享和声基底，明确延留的支撑音会保护当前基底，孤立经过音不立即引发重新命名，但可以带出不同的局部色彩。新配音或支撑音淡出后允许换基底。界面使用 ♭、♯、△、°、ø、+ 等音乐记号，保持单行固定字号。
 
 ## 开源协议
 

@@ -286,7 +286,7 @@ namespace NoteView
             shell.Background = new SolidColorBrush(background);
             shell.BorderBrush = Settings.BackgroundOpacity == 0 ? Brushes.Transparent : BrushOf(Settings.DarkInk ? "#8E9BA3" : "#304450");
             shell.BorderThickness = new Thickness(Settings.BackgroundOpacity == 0 ? 0 : 1);
-            chordCard.Background = Settings.Overlay || Settings.BackgroundOpacity == 0 ? Brushes.Transparent : BrushOf(Settings.DarkInk ? "#D9E4E8" : "#1B2B38");
+            chordCard.Background = Brushes.Transparent;
             toolbar.Visibility = Settings.Overlay ? Visibility.Collapsed : Visibility.Visible;
             header.Height = Settings.Overlay ? 45 : 65;
             brand.Text = "◉   NOTE VIEW";
@@ -308,7 +308,8 @@ namespace NoteView
             var ink = BrushOf(Settings.DarkInk ? "#263B48" : "#DCE9EF");
             var muted = BrushOf(Settings.DarkInk ? "#455F70" : "#9AAEBA");
             chordDescription.Foreground = ink; noteList.Foreground = muted; rangeLabel.Foreground = muted; chordAlternatives.Foreground = muted;
-            chordSymbol.Foreground = new SolidColorBrush(staff.AccentColor);
+            chordSymbol.Foreground = HarmonyVisuals.Accent(Settings.HarmonyTint, Settings.HarmonyMemoryTint,
+                Settings.HarmonyRelationTint, Settings.HarmonyHistoryStrength, Settings.HarmonyVariationStrength);
             brand.Foreground = Settings.DarkInk ? BrushOf("#176F5D") : Mint;
             rangeLabel.Text = "";
             updatingKeySelector = true;
@@ -407,11 +408,20 @@ namespace NoteView
             string display = harmonyColor.Chord != null && harmonyColor.Chord.IsRecognized ? MusicTheory.DisplaySymbol(harmonyColor.Chord.Symbol) : "";
             if (chordSymbol.Text != display) { chordSymbol.Text = display; chordSymbol.ToolTip = display; obsDirty = true; }
             Settings.HarmonyTint = harmonyColor.Hex;
+            Settings.HarmonyMemoryTint = harmonyColor.MemoryHex;
+            Settings.HarmonyRelationTint = harmonyColor.RelationHex;
+            Settings.HarmonyHistoryStrength = harmonyColor.HistoryStrength;
+            Settings.HarmonyVariationStrength = harmonyColor.VariationStrength;
+            Settings.HarmonyAtmosphereStrength = harmonyColor.AtmosphereStrength;
+            // Snapshots are new objects every frame, even when the foundation color is unchanged.
+            harmonyColor.ApplyNoteTints(active);
             if (changed)
             {
                 var tint = ParseColor(Settings.HarmonyTint, Color.FromRgb(164, 188, 203));
                 staff.AccentColor = tint; keyboard.AccentColor = tint;
-                chordSymbol.Foreground = new SolidColorBrush(tint);
+                chordSymbol.Foreground = HarmonyVisuals.Accent(Settings.HarmonyTint, Settings.HarmonyMemoryTint,
+                    Settings.HarmonyRelationTint, Settings.HarmonyHistoryStrength, Settings.HarmonyVariationStrength);
+                layoutBoard.RefreshAtmosphere();
                 staff.Refresh(); keyboard.Refresh(); obsDirty = true;
             }
             return changed;
@@ -424,7 +434,10 @@ namespace NoteView
             if (ChordPitchSet(demo ? demoNotes : notes) != string.Join(",", staff.Notes.Where(n => n.IsHeld || (Settings.IncludeSustainInChord && n.Brightness > 0)).Select(n => n.Number)))
             { RenderNotes(true); return; }
             if (!colorChanged && staff.Notes != null && active.Count == staff.Notes.Count &&
-                active.Select((n, i) => Math.Round(n.Brightness * 255) == Math.Round(staff.Notes[i].Brightness * 255)).All(equal => equal)) return;
+                active.Select((n, i) => Math.Round(n.Brightness * 255) == Math.Round(staff.Notes[i].Brightness * 255) &&
+                    n.Number == staff.Notes[i].Number && n.IsHeld == staff.Notes[i].IsHeld &&
+                    n.HasTint == staff.Notes[i].HasTint && n.TintR == staff.Notes[i].TintR &&
+                    n.TintG == staff.Notes[i].TintG && n.TintB == staff.Notes[i].TintB).All(equal => equal)) return;
             keyboard.Notes = active; staff.Notes = active;
             keyboard.Refresh(); staff.Refresh(); obsDirty = true;
         }

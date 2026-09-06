@@ -20,6 +20,8 @@ namespace NoteView
             {
                 var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
                 main = new MainWindow(true) { ShowInTaskbar = false, ShowActivated = false, Left = -15000, Top = -15000 };
+                double visualTime = 0;
+                SetField(main, "harmonyColor", new HarmonyColor(delegate { return visualTime; }));
                 main.Show(); Pump(60);
                 main.Settings.BackgroundOpacity = 0;
                 main.Settings.GhostNotes = false;
@@ -39,7 +41,6 @@ namespace NoteView
                 timer.Start();
                 main.WindowState = WindowState.Minimized; Pump(60);
                 Check(main.WindowState == WindowState.Minimized, "main window is actually minimized");
-                double visualTime = 0;
                 var notes = new NoteState(delegate { return visualTime; });
                 SetField(main, "notes", notes);
                 notes.Process(0x90, 60, 110); notes.Process(0x90, 64, 80); notes.Process(0x90, 67, 95);
@@ -69,7 +70,12 @@ namespace NoteView
                 main.ResetScoreTransform(); main.SetKeySignature(0, false); notes.Clear();
                 Invoke(main, "RenderNotes", true);
                 byte[] cleared = WaitForFrame(output.Url, transformed);
-                Check(initial.SequenceEqual(cleared), "clearing notes restores exact initial frame while minimized");
+                Check(!initial.SequenceEqual(cleared) && main.Settings.HarmonyAtmosphereStrength > 0,
+                    "clearing notes preserves the atmosphere for a continuous release");
+                for (int step = 0; step < 120; step++)
+                { visualTime += .1; Invoke(main, "AnimateNotes"); }
+                byte[] quiet = WaitForFrame(output.Url, cleared);
+                Check(initial.SequenceEqual(quiet), "silence restores exact initial frame after the atmosphere fades while minimized");
                 string address = output.Url;
                 main.Close(); main = null;
                 bool stopped = false;

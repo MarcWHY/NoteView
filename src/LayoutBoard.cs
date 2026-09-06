@@ -1,9 +1,11 @@
 ﻿using System;
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Shapes;
 
 namespace NoteView
 {
@@ -15,12 +17,17 @@ namespace NoteView
         private readonly Border[] boxes = new Border[3];
         private readonly Rect[] defaults = { new Rect(340, 0, 440, 440), new Rect(0, 400, 1120, 140), new Rect(20, 545, 1080, 90) };
         private readonly Border frame;
+        private readonly Rectangle atmosphere;
+        private string atmosphereKey;
         private AppSettings settings;
         public event Action Changed;
         public event Action Finished;
         public LayoutBoard(FrameworkElement score, FrameworkElement keyboard, FrameworkElement harmony)
         {
             Width = BoardWidth; Height = BoardHeight; ClipToBounds = true;
+            atmosphere = new Rectangle { Width = BoardWidth, Height = BoardHeight, IsHitTestVisible = false, Focusable = false };
+            RenderOptions.SetBitmapScalingMode(atmosphere, BitmapScalingMode.Linear);
+            Children.Add(atmosphere);
             items = new[] { score, keyboard, harmony };
             frame = new Border { Width = Width, Height = Height, BorderBrush = Brushes.MediumAquamarine, BorderThickness = new Thickness(2), Background = new SolidColorBrush(Color.FromArgb(10, 121, 230, 194)), IsHitTestVisible = false };
             Children.Add(frame);
@@ -87,6 +94,20 @@ namespace NoteView
                     element.Measure(r.Size); element.Arrange(r);
                 }
             }
+            RefreshAtmosphere();
+        }
+        public void RefreshAtmosphere()
+        {
+            if (settings == null) return;
+            Rect score = Bounds(0), keyboard = Bounds(1), harmony = Bounds(2);
+            // Reuse frozen gradients while only note brightness changes (the usual steady chord).
+            string key = string.Format(CultureInfo.InvariantCulture, "{0}|{1}|{2}|{3:F3}|{4:F3}|{5:F3}|{6:F3}|{7}|{8}|{9}",
+                settings.HarmonyTint, settings.HarmonyMemoryTint, settings.HarmonyRelationTint,
+                settings.HarmonyHistoryStrength, settings.HarmonyVariationStrength,
+                settings.HarmonyAtmosphereStrength, settings.AtmosphereOpacity, score, keyboard, harmony);
+            if (key == atmosphereKey) return;
+            atmosphereKey = key;
+            atmosphere.Fill = HarmonyVisuals.Atmosphere(settings, score, keyboard, harmony);
         }
         public void Move(int index, double dx, double dy)
         { Rect r = Bounds(index); r.X = Math.Max(0, Math.Min(BoardWidth - r.Width, r.X + dx)); r.Y = Math.Max(0, Math.Min(BoardHeight - r.Height, r.Y + dy)); Store(index, r); Apply(settings); if (Changed != null) Changed(); }

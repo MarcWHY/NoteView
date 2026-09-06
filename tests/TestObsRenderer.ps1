@@ -6,7 +6,7 @@ $testOutput = Join-Path $projectRoot 'artifacts\obs-renderer-tests'
 New-Item -ItemType Directory -Path $testOutput -Force | Out-Null
 $references = @('System.dll','System.Core.dll','System.Xaml.dll','System.Xml.dll') | ForEach-Object { '/reference:' + (Join-Path $framework $_) }
 $references += @('WindowsBase.dll','PresentationCore.dll','PresentationFramework.dll') | ForEach-Object { '/reference:' + (Join-Path $framework ('WPF\' + $_)) }
-$sources = @('MusicTheory.cs','KeySignature.cs','StaffView.cs', 'LayoutBoard.cs','AppSettings.cs','ObsFrameRenderer.cs') | ForEach-Object { Join-Path $projectRoot ('src\' + $_) }
+$sources = @('MusicTheory.cs','KeySignature.cs','StaffView.cs', 'LayoutBoard.cs','AppSettings.cs','HarmonyVisuals.cs','ObsFrameRenderer.cs') | ForEach-Object { Join-Path $projectRoot ('src\' + $_) }
 $sources += Join-Path $PSScriptRoot 'ObsFrameRendererTests.cs'
 $testExe = Join-Path $testOutput 'ObsFrameRendererTests.exe'
 & (Join-Path $framework 'csc.exe') /nologo /target:exe /platform:x64 /codepage:65001 /main:NoteView.ObsFrameRendererTests ('/out:' + $testExe) @references @sources

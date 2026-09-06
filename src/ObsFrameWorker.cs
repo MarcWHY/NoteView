@@ -40,7 +40,8 @@ namespace NoteView
             if (notes != null)
                 foreach (ActiveNote note in notes)
                     if (note != null) next.Notes.Add(new ActiveNote { Number = note.Number,
-                        Velocity = note.Velocity, IsHeld = note.IsHeld, Brightness = note.Brightness, StrikeId = note.StrikeId });
+                        Velocity = note.Velocity, IsHeld = note.IsHeld, Brightness = note.Brightness, StrikeId = note.StrikeId,
+                        HasTint = note.HasTint, TintR = note.TintR, TintG = note.TintG, TintB = note.TintB });
             lock (sync)
             {
                 if (stopped) return;

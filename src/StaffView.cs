@@ -504,7 +504,7 @@ namespace NoteView
             {
                 string accidental = placement.AccidentalText;
                 if (accidental.Length == 0) continue;
-                Color color = NoteColor(placement.Note.Velocity);
+                Color color = RenderNoteColor(placement.Note);
                 double opacity = NoteOpacity(placement.Note);
                 placement.Accidental = Text(accidental, Math.Max(11, layout.Spacing * 1.65),
                     color, opacity, symbolFace);
@@ -535,7 +535,7 @@ namespace NoteView
             ActiveNote note = placement.Note;
             double x = placement.X;
             double y = placement.Y;
-            Color color = NoteColor(note.Velocity);
+            Color color = RenderNoteColor(note);
             double opacity = NoteOpacity(note);
             double size = layout.HeadWidth;
             if (note.IsHeld)
@@ -614,7 +614,7 @@ namespace NoteView
 
         private void DrawKeyHighlight(DrawingContext dc, Rect rect, ActiveNote note, bool black)
         {
-            Color color = NoteColor(note.Velocity);
+            Color color = RenderNoteColor(note);
             double opacity = NoteOpacity(note);
             dc.DrawRoundedRectangle(Brush(color, opacity * (black ? .92 : .85)), null, rect, 2, 2);
             if (!note.IsHeld) return;
@@ -631,6 +631,9 @@ namespace NoteView
         }
 
         private Color NoteColor(int velocity) { return AccentColor; }
+
+        private Color RenderNoteColor(ActiveNote note)
+        { return note.HasTint ? Color.FromRgb(note.TintR, note.TintG, note.TintB) : AccentColor; }
 
         private double NoteOpacity(ActiveNote note)
         {

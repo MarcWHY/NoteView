@@ -11,6 +11,8 @@ namespace NoteView
         public bool IsHeld;
         public double Brightness = 1;
         public long StrikeId;
+        public bool HasTint;
+        public byte TintR, TintG, TintB;
     }
 
     /// <summary>
@@ -329,6 +331,16 @@ namespace NoteView
         };
 
         public static int ChordPatternCount { get { return Patterns.Length; } }
+
+        // The selected chord's own tones, excluding unrelated pedal residue.
+        public static int ChordPitchMask(ChordResult chord)
+        {
+            if (chord == null || !chord.IsRecognized || chord.Root < 0 || chord.Root > 11) return 0;
+            int relative = chord.Quality == "5" ? 129 : 0;
+            foreach (ChordPattern pattern in Patterns)
+                if (pattern.Suffix == chord.Quality) { relative = pattern.Mask; break; }
+            return ((relative << chord.Root) | (relative >> (12 - chord.Root))) & 4095;
+        }
 
         public static int OmittedFifthPatternCount
         {

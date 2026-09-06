@@ -11,6 +11,7 @@ namespace NoteView
         private readonly MainWindow main;
         private readonly AppSettings settings;
         private Slider opacity;
+        private Slider atmosphereOpacity;
         private TextBlock opacityValue;
         private Button backgroundButton;
         private CheckBox darkInkCheckbox;
@@ -112,20 +113,32 @@ namespace NoteView
             colors.Children.Add(backgroundButton);
             colors.Children.Add(MainWindow.ButtonOf("深海", delegate { SetBackground("#101B26", false); }));
             colors.Children.Add(MainWindow.ButtonOf("纸白", delegate { SetBackground("#F1F4EF", true); }));
-            colors.Children.Add(MainWindow.ButtonOf("全透明", delegate { opacity.Value = 0; }));
+            colors.Children.Add(MainWindow.ButtonOf("全透明", delegate { opacity.Value = 0; atmosphereOpacity.Value = 0; }));
             content.Children.Add(colors);
             opacityValue = MainWindow.Label("背景不透明度", 12, Foreground);
             content.Children.Add(opacityValue);
             opacity = new Slider { Minimum = 0, Maximum = 100, Value = settings.BackgroundOpacity, TickFrequency = 1, IsSnapToTickEnabled = true, Margin = new Thickness(0, 10, 0, 15) };
             opacity.ValueChanged += delegate { settings.BackgroundOpacity = opacity.Value; UpdateOpacityText(); main.ApplySettings(); };
             content.Children.Add(opacity); UpdateOpacityText();
+            var atmosphereValue = MainWindow.Label("和声氛围强度   " + (int)settings.AtmosphereOpacity + "%", 12, Foreground);
+            content.Children.Add(atmosphereValue);
+            atmosphereOpacity = new Slider { Minimum = 0, Maximum = 100, Value = settings.AtmosphereOpacity,
+                TickFrequency = 1, IsSnapToTickEnabled = true, Margin = new Thickness(0, 10, 0, 8) };
+            atmosphereOpacity.ValueChanged += delegate {
+                settings.AtmosphereOpacity = atmosphereOpacity.Value;
+                atmosphereValue.Text = "和声氛围强度   " + (int)atmosphereOpacity.Value + "%";
+                main.ApplySettings(); };
+            content.Children.Add(atmosphereOpacity);
+            var atmosphereHelp = MainWindow.Label("氛围随和声流动，透明背景也能保留淡淡光晕。\n设为 0% 可关闭氛围，保留原有透明背景。", 11,
+                MainWindow.BrushOf("#9BAEBB"), new Thickness(0, 0, 0, 12));
+            atmosphereHelp.LineHeight = 19; content.Children.Add(atmosphereHelp);
             darkInkCheckbox = Check(content, "深色谱线与文字（适合浅色桌面）", settings.DarkInk, delegate(bool value) { settings.DarkInk = value; });
             Check(content, "显示未弹音符的淡色位置提示", settings.GhostNotes, delegate(bool value) { settings.GhostNotes = value; });
             Check(content, "纯谱面模式（隐藏设备工具栏）", settings.Overlay, delegate(bool value) { settings.Overlay = value; });
 
             Section(content, "演奏显示");
             Choice(content, "显示音域", new[] { "完整钢琴 · A0–C8（88 键）", "常用音域 · C2–C6" }, settings.FullRange ? 0 : 1, delegate(int i) { settings.FullRange = i == 0; });
-            content.Children.Add(MainWindow.Label("和弦决定色彩，力度决定击键亮度。\n暖金：大和弦；冷蓝：小和弦；青绿：挂留。\n珊瑚橙：属和弦；紫／玫红：减、增及变化和弦。\n同组和声保持染色，确认换和弦后柔和换色。\n按住保留击键亮度的 14%；踏板延音逐渐淡出。", 12, Foreground, new Thickness(0, 0, 0, 10)));
+            content.Children.Add(MainWindow.Label("和声与进行决定色彩，力度决定击键亮度。\n暖金：大和弦；冷蓝：小和弦；青绿：挂留。\n变化音获得独立染色，和声基底保持连续。\n换和弦时旧色融入新色，背景留下淡淡余韵。\n按住保留击键亮度的 14%；踏板延音逐渐淡出。", 12, Foreground, new Thickness(0, 0, 0, 10)));
             Choice(content, "无调号偏好", new[] { "非调内音用升号（C 大调 / A 小调）", "非调内音用降号（C 大调 / A 小调）" }, settings.Flats ? 1 : 0, delegate(int i) { settings.Flats = i == 1; });
             string[] channels = new string[17]; channels[0] = "全部通道";
             for (int i = 1; i < channels.Length; i++) channels[i] = "通道 " + i;
@@ -221,7 +234,7 @@ namespace NoteView
             refreshingObsControls = false;
         }
         private void UpdateOpacityText()
-        { opacityValue.Text = "背景不透明度   " + (int)opacity.Value + "%" + (opacity.Value == 0 ? "  ·  桌面完全透出" : ""); }
+        { opacityValue.Text = "背景不透明度   " + (int)opacity.Value + "%" + (opacity.Value == 0 ? "  ·  无底色" : ""); }
         private void SetBackground(string color, bool darkInk)
         { settings.Background = color; settings.DarkInk = darkInk; darkInkCheckbox.IsChecked = darkInk; opacity.Value = 96; main.ApplySettings(); }
         private void PickBackground()

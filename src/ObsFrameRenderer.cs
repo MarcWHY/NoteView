@@ -41,6 +41,7 @@ namespace NoteView
             symbol.TextWrapping = TextWrapping.NoWrap;
             symbol.FontWeight = FontWeights.Normal;
             symbol.VerticalAlignment = VerticalAlignment.Center;
+            symbol.HorizontalAlignment = HorizontalAlignment.Left;
             symbol.Margin = new Thickness(0, 0, 18, 0);
             harmony.Children.Add(symbol);
 
@@ -88,7 +89,8 @@ namespace NoteView
             keyboard.AccentColor = staff.AccentColor; keyboard.Refresh();
             board.Apply(settings);
 
-            Brush accent = Solid(staff.AccentColor);
+            Brush accent = HarmonyVisuals.Accent(settings.HarmonyTint, settings.HarmonyMemoryTint,
+                settings.HarmonyRelationTint, settings.HarmonyHistoryStrength, settings.HarmonyVariationStrength);
             symbol.Foreground = accent;
             symbol.Text = MusicTheory.DisplaySymbol(chordSymbol);
             symbol.FontSize = 36;

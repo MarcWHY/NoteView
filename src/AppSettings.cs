@@ -8,8 +8,14 @@ namespace NoteView
     {
         public string Background = "#101B26";
         public double BackgroundOpacity = 96;
+        public double AtmosphereOpacity = 12;
         public string Accent = "#70E5C0";
         [XmlIgnore] public string HarmonyTint = "#A4BCCB";
+        [XmlIgnore] public string HarmonyMemoryTint = "#A4BCCB";
+        [XmlIgnore] public string HarmonyRelationTint = "#A4BCCB";
+        [XmlIgnore] public double HarmonyHistoryStrength;
+        [XmlIgnore] public double HarmonyVariationStrength;
+        [XmlIgnore] public double HarmonyAtmosphereStrength;
         public bool Topmost = true;
         public bool FullRange = true;
         public bool GhostNotes = true;
@@ -49,6 +55,7 @@ namespace NoteView
                 {
                     var s = (AppSettings)new XmlSerializer(typeof(AppSettings)).Deserialize(stream);
                     s.BackgroundOpacity = FiniteClamp(s.BackgroundOpacity, 0, 100, 96);
+                    s.AtmosphereOpacity = FiniteClamp(s.AtmosphereOpacity, 0, 100, 12);
                     s.Width = FiniteClamp(s.Width, 880, 2400, 1120);
                     s.Height = FiniteClamp(s.Height, 640, 1600, 780);
                     s.StaffScale = FiniteClamp(s.StaffScale, .2, 2, 1);
