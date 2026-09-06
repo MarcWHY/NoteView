@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Globalization;
-using System.IO;
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -26,6 +25,12 @@ namespace NoteView
         private readonly LayoutBoard board;
         private readonly TextBlock symbol, detail, alternate, pedal;
         private readonly Grid harmony;
+        private readonly ObsBackgroundComposer background = new ObsBackgroundComposer(PixelWidth, PixelHeight);
+        private readonly FastPngEncoder encoder = new FastPngEncoder();
+        private readonly byte[] pixels = new byte[PixelWidth * PixelHeight * 4];
+        private readonly RenderTargetBitmap bitmap = new RenderTargetBitmap(PixelWidth, PixelHeight,
+            96 * RenderScale, 96 * RenderScale, PixelFormats.Pbgra32);
+        internal double LastBackgroundMilliseconds, LastRasterMilliseconds, LastEncodeMilliseconds;
 
         public ObsFrameRenderer()
         {
@@ -63,7 +68,7 @@ namespace NoteView
             pedal.HorizontalAlignment = HorizontalAlignment.Right;
             pedal.VerticalAlignment = VerticalAlignment.Center;
             Grid.SetColumn(pedal, 2); harmony.Children.Add(pedal);
-            board = new LayoutBoard(staff, keyboard, harmony); surface.Child = board;
+            board = new LayoutBoard(staff, keyboard, harmony) { DrawAtmosphere = false }; surface.Child = board;
         }
 
         public byte[] Render(AppSettings settings, IList<ActiveNote> notes, string chordSymbol,
@@ -71,11 +76,7 @@ namespace NoteView
         {
             surface.VerifyAccess();
             if (settings == null) throw new ArgumentNullException("settings");
-            Color background = ParseColor(settings.Background, Color.FromRgb(16, 27, 38));
-            double opacity = settings.BackgroundOpacity;
-            if (double.IsNaN(opacity) || double.IsInfinity(opacity)) opacity = 96;
-            background.A = (byte)Math.Round(Math.Max(0, Math.Min(100, opacity)) * 2.55);
-            surface.Background = Solid(background);
+            surface.Background = Brushes.Transparent;
             staff.Notes = notes ?? new List<ActiveNote>();
             staff.Flats = settings.Flats;
             staff.KeySignatureFifths = settings.KeySignatureFifths;
@@ -88,6 +89,10 @@ namespace NoteView
             keyboard.LightTheme = staff.LightTheme; keyboard.IntensityMode = staff.IntensityMode;
             keyboard.AccentColor = staff.AccentColor; keyboard.Refresh();
             board.Apply(settings);
+            keyboard.RenderPixelScale = RenderScale;
+            long started = Stopwatch.GetTimestamp();
+            background.Prepare(settings, board.Bounds(0), board.Bounds(1), board.Bounds(2));
+            LastBackgroundMilliseconds = Elapsed(started);
 
             Brush accent = HarmonyVisuals.Accent(settings.HarmonyTint, settings.HarmonyMemoryTint,
                 settings.HarmonyRelationTint, settings.HarmonyHistoryStrength, settings.HarmonyVariationStrength);
@@ -110,17 +115,21 @@ namespace NoteView
             surface.UpdateLayout();
             // Render the logical 1120 x 640 layout at 1.5x pixel density. This gives
             // OBS sharper edges while preserving responsive real-time animation.
-            var bitmap = new RenderTargetBitmap(PixelWidth, PixelHeight,
-                96 * RenderScale, 96 * RenderScale, PixelFormats.Pbgra32);
+            started = Stopwatch.GetTimestamp();
+            bitmap.Clear();
             bitmap.Render(surface);
-            var encoder = new PngBitmapEncoder();
-            encoder.Frames.Add(BitmapFrame.Create(bitmap));
-            using (var stream = new MemoryStream())
-            {
-                encoder.Save(stream);
-                return stream.ToArray();
-            }
+            bitmap.CopyPixels(pixels, PixelWidth * 4, 0);
+            LastRasterMilliseconds = Elapsed(started);
+            started = Stopwatch.GetTimestamp();
+            background.Composite(pixels);
+            LastBackgroundMilliseconds += Elapsed(started);
+            started = Stopwatch.GetTimestamp();
+            byte[] png = encoder.EncodePbgra32(pixels, PixelWidth, PixelHeight, PixelWidth * 4);
+            LastEncodeMilliseconds = Elapsed(started);
+            return png;
         }
+        private static double Elapsed(long started)
+        { return (Stopwatch.GetTimestamp() - started) * 1000.0 / Stopwatch.Frequency; }
 
         private static TextBlock Text(double size)
         {

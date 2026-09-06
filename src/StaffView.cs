@@ -5,6 +5,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
+using System.Windows.Media.Imaging;
 
 namespace NoteView
 {
@@ -14,6 +15,7 @@ namespace NoteView
         private static readonly int[] SharpSignatureSteps = { 38, 35, 39, 36, 33, 37, 34 };
         private static readonly int[] FlatSignatureSteps = { 34, 37, 33, 36, 32, 35, 31 };
         private readonly Dictionary<uint, SolidColorBrush> brushes = new Dictionary<uint, SolidColorBrush>();
+        private readonly Dictionary<ulong, Pen> pens = new Dictionary<ulong, Pen>();
         private readonly Typeface symbolFace = new Typeface("Segoe UI Symbol");
         private readonly ContainerVisual scoreNotes = new ContainerVisual();
         private readonly DrawingVisual sustainedNotes = new DrawingVisual();
@@ -26,6 +28,20 @@ namespace NoteView
         private double scoreOffsetX, scoreOffsetY;
         private double keyboardScale = 1, keyboardOffsetX, keyboardOffsetY;
         private readonly Dictionary<int, HeadSlot> stableHeadSlots = new Dictionary<int, HeadSlot>();
+        private Layout cachedLayout, placementLayout, staffDrawingLayout, keyboardDrawingLayout;
+        private double layoutWidth, layoutHeight;
+        private int layoutKey;
+        private bool layoutFullRange, layoutScoreOnly, layoutKeyboardOnly, layoutFlats;
+        private bool staffDrawingLight, keyboardDrawingLight;
+        private DrawingGroup staffDrawing;
+        private List<NotePlacement> cachedPlacements;
+        private readonly List<KeyDrawing> keyDrawings = new List<KeyDrawing>();
+        private DrawingGroup keyboardTopDrawing;
+        private RenderTargetBitmap whiteKeyBitmap, blackKeyBitmap;
+        private double keyboardBitmapScale;
+        private NotatedPitch[] spellings;
+        private int spellingKey;
+        private bool spellingFlats;
 
         public IList<ActiveNote> Notes { get; set; }
         public bool ScoreOnly { get; set; }
@@ -37,6 +53,9 @@ namespace NoteView
         public bool LightTheme { get; set; }
         public int IntensityMode { get; set; }
         public Color AccentColor { get; set; }
+        // Offscreen renderers set their export density explicitly. On desktop the
+        // actual window DPI and ancestor scaling take precedence.
+        public double RenderPixelScale { get; set; }
 
         /// <summary>Scales only the score around the center of its available area.</summary>
         public double ScoreScale
@@ -90,6 +109,7 @@ namespace NoteView
             FullRange = true;
             GhostNotes = true;
             AccentColor = Color.FromRgb(107, 216, 240);
+            RenderPixelScale = 1.5;
             SnapsToDevicePixels = true;
             IsHitTestVisible = false;
             // Blur only the pedal-retained notes. The staff and held notes stay crisp.
@@ -139,6 +159,7 @@ namespace NoteView
             dc.PushClip(new RectangleGeometry(new Rect(0, 0, ActualWidth, ActualHeight)));
             if (KeyboardOnly)
             {
+                sustainedNotes.Effect = null;
                 using (DrawingContext empty = sustainedNotes.RenderOpen()) { }
                 using (DrawingContext empty = heldNotes.RenderOpen()) { }
                 DrawKeyboard(dc, layout, active, ink); dc.Pop(); return;
@@ -172,6 +193,10 @@ namespace NoteView
             // Child visuals share the same score transform and viewport. Keeping
             // held notes above the soft sustain layer preserves immediate feedback.
             sustainBlur.Radius = Math.Max(1.4, layout.HeadWidth * scoreScale * .18);
+            bool anySustained = false;
+            foreach (NotePlacement placement in placements)
+                if (!placement.Note.IsHeld && NoteOpacity(placement.Note) > 0) { anySustained = true; break; }
+            sustainedNotes.Effect = anySustained ? sustainBlur : null;
             DrawNoteLayer(sustainedNotes, false, placements, layout, ink, scoreTransform);
             DrawNoteLayer(heldNotes, true, placements, layout, ink, scoreTransform);
 
@@ -206,6 +231,9 @@ namespace NoteView
 
         private Layout CreateLayout()
         {
+            if (cachedLayout != null && layoutWidth == ActualWidth && layoutHeight == ActualHeight &&
+                layoutKey == KeySignatureFifths && layoutFlats == Flats && layoutFullRange == FullRange &&
+                layoutScoreOnly == ScoreOnly && layoutKeyboardOnly == KeyboardOnly) return cachedLayout;
             Layout layout = new Layout();
             layout.First = FullRange ? 21 : 36;
             layout.Last = FullRange ? 108 : 84;
@@ -223,7 +251,7 @@ namespace NoteView
             int lowerStep = int.MaxValue;
             for (int number = layout.First; number <= layout.Last; number++)
             {
-                NotatedPitch pitch = KeySignature.Spell(number, KeySignatureFifths, Flats);
+                NotatedPitch pitch = Spell(number);
                 upperStep = Math.Max(upperStep, pitch.Step);
                 lowerStep = Math.Min(lowerStep, pitch.Step);
                 if (pitch.InKey) layout.GhostSteps.Add(pitch.Step);
@@ -262,10 +290,24 @@ namespace NoteView
                 layout.KeyX[number] = layout.Left + layout.WhiteWidth * (IsBlack(number) ? whiteIndex : whiteIndex + .5);
                 if (!IsBlack(number)) whiteIndex++;
             }
+            cachedLayout = layout; layoutWidth = ActualWidth; layoutHeight = ActualHeight;
+            layoutKey = KeySignatureFifths; layoutFlats = Flats; layoutFullRange = FullRange;
+            layoutScoreOnly = ScoreOnly; layoutKeyboardOnly = KeyboardOnly;
             return layout;
         }
 
         private void DrawStaff(DrawingContext dc, Layout layout, Color ink)
+        {
+            if (staffDrawingLayout != layout || staffDrawingLight != LightTheme)
+            {
+                staffDrawing = new DrawingGroup();
+                using (DrawingContext cached = staffDrawing.Open()) DrawStaffContent(cached, layout, ink);
+                staffDrawing.Freeze(); staffDrawingLayout = layout; staffDrawingLight = LightTheme;
+            }
+            dc.DrawDrawing(staffDrawing);
+        }
+
+        private void DrawStaffContent(DrawingContext dc, Layout layout, Color ink)
         {
             Pen line = Pen(ink, LightTheme ? .26 : .29, .8);
             // E4..F5 and G2..A3: one shared diatonic coordinate system.
@@ -397,6 +439,24 @@ namespace NoteView
 
         private List<NotePlacement> PlaceNotes(Layout layout, IDictionary<int, ActiveNote> active)
         {
+            // Note age and harmony tint change on every frame, while pitch geometry
+            // normally stays fixed. Reuse that geometry and only refresh its data.
+            bool samePitches = placementLayout == layout && cachedPlacements != null && cachedPlacements.Count == active.Count;
+            if (samePitches)
+                foreach (NotePlacement placement in cachedPlacements)
+                    if (!active.ContainsKey(placement.Number)) { samePitches = false; break; }
+            if (samePitches)
+            {
+                foreach (NotePlacement placement in cachedPlacements)
+                {
+                    placement.Note = active[placement.Number];
+                    if (placement.Accidental == null) continue;
+                    Brush tint = Brush(RenderNoteColor(placement.Note), NoteOpacity(placement.Note));
+                    if (!ReferenceEquals(tint, placement.AccidentalBrush))
+                    { placement.Accidental.SetForegroundBrush(tint); placement.AccidentalBrush = tint; }
+                }
+                return cachedPlacements;
+            }
             var ended = new List<int>();
             foreach (int number in stableHeadSlots.Keys)
                 if (!active.ContainsKey(number)) ended.Add(number);
@@ -432,6 +492,7 @@ namespace NoteView
                         if (!stableHeadSlots.ContainsKey(placement.Note.Number))
                             stableHeadSlots[placement.Note.Number] = new HeadSlot {
                                 GroupOffset = placement.HeadGroupX - layout.NoteX, Column = placement.Column };
+                    placementLayout = layout; cachedPlacements = placements;
                     return placements;
                 }
                 // Expand only when the actual played neighbours need extra room.
@@ -460,19 +521,18 @@ namespace NoteView
                 if (comparison != 0) return comparison;
                 // Keep the signature's diatonic note on the main column when its
                 // chromatic neighbour is also held, including F# beside F natural.
-                comparison = KeySignature.Spell(b.Number, KeySignatureFifths, Flats).InKey.CompareTo(
-                    KeySignature.Spell(a.Number, KeySignatureFifths, Flats).InKey);
+                comparison = Spell(b.Number).InKey.CompareTo(Spell(a.Number).InKey);
                 return comparison != 0 ? comparison : a.Number.CompareTo(b.Number);
             });
             List<NotePlacement> result = new List<NotePlacement>();
             double headWidth = layout.HeadWidth;
             foreach (ActiveNote note in sorted)
             {
-                NotatedPitch pitch = KeySignature.Spell(note.Number, KeySignatureFifths, Flats);
+                NotatedPitch pitch = Spell(note.Number);
                 bool chromaticUnison = KeySignatureFifths != 0 && stepCounts[pitch.Step] > 1;
                 HeadSlot stable;
                 bool hasStableSlot = stableHeadSlots.TryGetValue(note.Number, out stable);
-                NotePlacement placement = new NotePlacement { Note = note, Y = PitchY(note.Number, layout),
+                NotePlacement placement = new NotePlacement { Note = note, Number = note.Number, Y = PitchY(note.Number, layout),
                     HeadGroupX = hasStableSlot ? layout.NoteX + stable.GroupOffset :
                         layout.NoteX + (chromaticUnison && !pitch.InKey ? unisonOffset : 0),
                     AccidentalText = chromaticUnison ? (pitch.Alteration > 0 ? "♯" : pitch.Alteration < 0 ? "♭" : "♮") : pitch.Accidental };
@@ -508,6 +568,7 @@ namespace NoteView
                 double opacity = NoteOpacity(placement.Note);
                 placement.Accidental = Text(accidental, Math.Max(11, layout.Spacing * 1.65),
                     color, opacity, symbolFace);
+                placement.AccidentalBrush = Brush(color, opacity);
                 double width = Math.Max(placement.Accidental.WidthIncludingTrailingWhitespace, placement.Accidental.Extent * .45);
                 double signRight = placement.HeadGroupX - headWidth * .5 - 5;
                 double y = placement.Y - placement.Accidental.Height * .58;
@@ -550,9 +611,72 @@ namespace NoteView
 
         private void DrawKeyboard(DrawingContext dc, Layout layout, IDictionary<int, ActiveNote> active, Color ink)
         {
+            double rasterScale = KeyboardRasterScale();
+            if (keyboardDrawingLayout != layout || keyboardDrawingLight != LightTheme)
+            {
+                BuildKeyboardDrawings(layout, ink);
+                keyboardDrawingLayout = layout; keyboardDrawingLight = LightTheme;
+                whiteKeyBitmap = blackKeyBitmap = null;
+            }
+            if (whiteKeyBitmap == null || Math.Abs(keyboardBitmapScale - rasterScale) > .01)
+            { BuildKeyboardBitmaps(rasterScale); keyboardBitmapScale = rasterScale; }
             dc.PushTransform(new MatrixTransform(keyboardScale, 0, 0, keyboardScale,
                 (layout.Left + layout.Right) * .5 * (1 - keyboardScale) + keyboardOffsetX,
                 (layout.KeyboardTop + layout.KeyboardHeight * .5) * (1 - keyboardScale) + keyboardOffsetY));
+            // Split the static keybed at its original white/black z boundary.
+            // Highlights retain their native vector edges and original clipping.
+            for (int layer = 0; layer < 2; layer++)
+            {
+                dc.DrawImage(layer == 0 ? whiteKeyBitmap : blackKeyBitmap, new Rect(0, 0, ActualWidth, ActualHeight));
+                foreach (KeyDrawing key in keyDrawings)
+                {
+                    if (key.Black != (layer == 1)) continue;
+                    ActiveNote note;
+                    if (!active.TryGetValue(key.Number, out note)) continue;
+                    if (key.Clip != null) dc.PushClip(key.Clip);
+                    DrawKeyHighlight(dc, key.Face, note, key.Black);
+                    if (key.Clip != null) dc.Pop();
+                }
+            }
+            dc.DrawDrawing(keyboardTopDrawing);
+            dc.Pop();
+        }
+
+        private double KeyboardRasterScale()
+        {
+            double scale = Finite(RenderPixelScale) ? Math.Max(.5, RenderPixelScale) : 1.5;
+            PresentationSource source = PresentationSource.FromVisual(this);
+            Visual root = this;
+            Visual parent;
+            while ((parent = VisualTreeHelper.GetParent(root) as Visual) != null) root = parent;
+            Rect pixel = TransformToAncestor(root).TransformBounds(new Rect(0, 0, 1, 1));
+            if (source != null && source.CompositionTarget != null)
+            {
+                Matrix dpi = source.CompositionTarget.TransformToDevice;
+                scale = Math.Max(pixel.Width * dpi.M11, pixel.Height * dpi.M22);
+            }
+            else scale *= Math.Max(pixel.Width, pixel.Height);
+            return Math.Max(.5, Math.Min(4, scale * keyboardScale));
+        }
+
+        private void BuildKeyboardBitmaps(double scale)
+        {
+            for (int layer = 0; layer < 2; layer++)
+            {
+                var visual = new DrawingVisual();
+                using (DrawingContext dc = visual.RenderOpen())
+                    foreach (KeyDrawing key in keyDrawings)
+                        if (key.Black == (layer == 1)) dc.DrawDrawing(key.Drawing);
+                var bitmap = new RenderTargetBitmap(Math.Max(1, (int)Math.Ceiling(ActualWidth * scale)),
+                    Math.Max(1, (int)Math.Ceiling(ActualHeight * scale)), 96 * scale, 96 * scale, PixelFormats.Pbgra32);
+                bitmap.Render(visual); bitmap.Freeze();
+                if (layer == 0) whiteKeyBitmap = bitmap; else blackKeyBitmap = bitmap;
+            }
+        }
+
+        private void BuildKeyboardDrawings(Layout layout, Color ink)
+        {
+            keyDrawings.Clear();
             double top = layout.KeyboardTop, length = layout.KeyboardHeight;
             double gap = Math.Max(.55, layout.WhiteWidth * .032);
             Brush whiteFace = KeyGradient("#20D9F3FF", "#08D9F3FF", "#16C7E6F4", false);
@@ -572,35 +696,51 @@ namespace NoteView
                     var cutout = new RectangleGeometry(new Rect(layout.KeyX[neighbor] - blackWidth / 2 - .5, top, blackWidth + 1, length * .63 + .5));
                     keyShape = new CombinedGeometry(GeometryCombineMode.Exclude, keyShape, cutout);
                 }
-                dc.PushClip(keyShape);
-                dc.DrawRoundedRectangle(whiteEdge, Pen(ink, .16, .65), rect, 1.4, 1.4);
+                // Resolve the black-key cutouts once; retaining CombinedGeometry
+                // otherwise repeats its boolean clipping work on software frames.
+                keyShape = keyShape.GetOutlinedPathGeometry();
+                keyShape.Freeze();
+                var drawing = new DrawingGroup();
                 Rect face = new Rect(rect.X, rect.Y, rect.Width, Math.Max(1, rect.Height - 3));
-                dc.DrawRoundedRectangle(whiteFace, null, face, 1.3, 1.3);
-                dc.DrawLine(Pen(ink, .18, .65), new Point(rect.Left + .8, top + 2), new Point(rect.Left + .8, face.Bottom - 1));
-                dc.DrawLine(Pen(ink, .25, .7), new Point(rect.Left + 1, face.Bottom - .8), new Point(rect.Right - 1, face.Bottom - .8));
-                ActiveNote note;
-                if (active.TryGetValue(number, out note)) DrawKeyHighlight(dc, face, note, false);
-                dc.Pop();
+                using (DrawingContext dc = drawing.Open())
+                {
+                    dc.PushClip(keyShape);
+                    dc.DrawRoundedRectangle(whiteEdge, Pen(ink, .16, .65), rect, 1.4, 1.4);
+                    dc.DrawRoundedRectangle(whiteFace, null, face, 1.3, 1.3);
+                    dc.DrawLine(Pen(ink, .18, .65), new Point(rect.Left + .8, top + 2), new Point(rect.Left + .8, face.Bottom - 1));
+                    dc.DrawLine(Pen(ink, .25, .7), new Point(rect.Left + 1, face.Bottom - .8), new Point(rect.Right - 1, face.Bottom - .8));
+                    dc.Pop();
+                }
+                drawing.Freeze();
+                keyDrawings.Add(new KeyDrawing { Number = number, Drawing = drawing, Clip = keyShape, Face = face });
             }
             for (int number = layout.First; number <= layout.Last; number++)
             {
                 if (!IsBlack(number)) continue;
                 double width = layout.WhiteWidth * .58;
                 Rect rect = new Rect(layout.KeyX[number] - width / 2, top, width, length * .63);
-                dc.DrawRoundedRectangle(Brush(Colors.Black, .06), null,
-                    new Rect(rect.X - 1, rect.Y + 2, rect.Width + 3, rect.Height + 2), 2, 2);
-                dc.DrawRoundedRectangle(blackSide, Pen(ink, .22, .7), rect, 1.4, 1.4);
+                var drawing = new DrawingGroup();
                 double bevel = width * .125;
                 Rect face = new Rect(rect.Left + bevel, rect.Top + .7, rect.Width - bevel * 2, Math.Max(1, rect.Height - 4));
-                dc.DrawRoundedRectangle(blackFace, null, face, .7, .7);
-                dc.DrawLine(Pen(ink, .24, .65), new Point(face.Left + .3, face.Top + 1), new Point(face.Left + .3, face.Bottom - 1));
-                dc.DrawLine(Pen(ink, .18, .7), new Point(face.Left, face.Bottom), new Point(face.Right, face.Bottom));
-                ActiveNote note;
-                if (active.TryGetValue(number, out note)) DrawKeyHighlight(dc, face, note, true);
+                using (DrawingContext dc = drawing.Open())
+                {
+                    dc.DrawRoundedRectangle(Brush(Colors.Black, .06), null,
+                        new Rect(rect.X - 1, rect.Y + 2, rect.Width + 3, rect.Height + 2), 2, 2);
+                    dc.DrawRoundedRectangle(blackSide, Pen(ink, .22, .7), rect, 1.4, 1.4);
+                    dc.DrawRoundedRectangle(blackFace, null, face, .7, .7);
+                    dc.DrawLine(Pen(ink, .24, .65), new Point(face.Left + .3, face.Top + 1), new Point(face.Left + .3, face.Bottom - 1));
+                    dc.DrawLine(Pen(ink, .18, .7), new Point(face.Left, face.Bottom), new Point(face.Right, face.Bottom));
+                }
+                drawing.Freeze();
+                keyDrawings.Add(new KeyDrawing { Number = number, Drawing = drawing, Face = face, Black = true });
             }
-            dc.DrawRectangle(KeyGradient("#18000000", "#06000000", "#00000000", false), null,
-                new Rect(layout.Left, top, layout.Right - layout.Left, Math.Min(5, length * .04)));
-            dc.Pop();
+            keyboardTopDrawing = new DrawingGroup();
+            using (DrawingContext dc = keyboardTopDrawing.Open())
+            {
+                dc.DrawRectangle(KeyGradient("#18000000", "#06000000", "#00000000", false), null,
+                    new Rect(layout.Left, top, layout.Right - layout.Left, Math.Min(5, length * .04)));
+            }
+            keyboardTopDrawing.Freeze();
         }
 
         private static Brush KeyGradient(string first, string middle, string last, bool horizontal)
@@ -664,8 +804,14 @@ namespace NoteView
 
         private Pen Pen(Color color, double opacity, double thickness)
         {
-            Pen pen = new Pen(Brush(color, opacity), thickness);
-            pen.Freeze();
+            var brush = Brush(color, opacity);
+            Color c = brush.Color;
+            uint argb = ((uint)c.A << 24) | ((uint)c.R << 16) | ((uint)c.G << 8) | c.B;
+            ulong key = ((ulong)argb << 32) | (uint)Math.Round(thickness * 10000);
+            Pen pen;
+            if (pens.TryGetValue(key, out pen)) return pen;
+            if (pens.Count > 2048) pens.Clear();
+            pen = new Pen(brush, thickness); pen.Freeze(); pens[key] = pen;
             return pen;
         }
 
@@ -677,7 +823,14 @@ namespace NoteView
 
         private int DiatonicStep(int number)
         {
-            return KeySignature.Spell(number, KeySignatureFifths, Flats).Step;
+            return Spell(number).Step;
+        }
+
+        private NotatedPitch Spell(int number)
+        {
+            if (spellings == null || spellingKey != KeySignatureFifths || spellingFlats != Flats)
+            { spellings = new NotatedPitch[128]; spellingKey = KeySignatureFifths; spellingFlats = Flats; }
+            return spellings[number] ?? (spellings[number] = KeySignature.Spell(number, KeySignatureFifths, Flats));
         }
 
         private double PitchY(int number, Layout layout)
@@ -718,11 +871,22 @@ namespace NoteView
         private sealed class NotePlacement
         {
             public ActiveNote Note;
+            public int Number;
             public double X, Y, HeadGroupX;
             public int Column;
             public string AccidentalText;
             public Rect HeadBounds, AccidentalBounds;
             public FormattedText Accidental;
+            public Brush AccidentalBrush;
+        }
+
+        private sealed class KeyDrawing
+        {
+            public int Number;
+            public bool Black;
+            public DrawingGroup Drawing;
+            public Geometry Clip;
+            public Rect Face;
         }
 
         private sealed class HeadSlot

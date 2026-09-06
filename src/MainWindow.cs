@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -39,7 +40,10 @@ namespace NoteView
         private readonly DispatcherTimer renderTimer = new DispatcherTimer();
         private readonly DispatcherTimer deviceTimer = new DispatcherTimer();
         private readonly DispatcherTimer demoTimer = new DispatcherTimer();
-        private readonly DispatcherTimer obsTimer = new DispatcherTimer();
+        private readonly DispatcherTimer obsAnimationTimer = new DispatcherTimer();
+        private bool noteRenderQueued, obsPublishQueued;
+        private bool animationTick;
+        private long lastObsSubmit;
         private ObsOutputServer obsOutput;
         private ObsFrameWorker obsWorker;
         private bool obsDirty = true;
@@ -81,15 +85,20 @@ namespace NoteView
             BuildLayout();
             ApplySettings();
             SourceInitialized += OnSourceInitialized;
-            obsTimer.Interval = TimeSpan.FromMilliseconds(33);
-            obsTimer.Tick += delegate { PublishObsFrame(false); };
             Loaded += delegate
             {
                 if (preview) return;
                 CreateTray();
                 RefreshDevices(true);
                 renderTimer.Interval = TimeSpan.FromMilliseconds(25);
-                renderTimer.Tick += delegate { if (dirty) RenderNotes(false); else AnimateNotes(); };
+                // The timer advances envelopes and harmonic confirmation only.
+                // New MIDI notes have their own coalesced immediate render below.
+                renderTimer.Tick += delegate
+                {
+                    animationTick = true;
+                    try { if (dirty) RenderNotes(false); else AnimateNotes(); }
+                    finally { animationTick = false; }
+                };
                 renderTimer.Start();
                 deviceTimer.Interval = TimeSpan.FromSeconds(3);
                 deviceTimer.Tick += delegate { RefreshDevices(false); };
@@ -98,6 +107,7 @@ namespace NoteView
             };
             demoTimer.Interval = TimeSpan.FromMilliseconds(1500);
             demoTimer.Tick += delegate { NextDemo(); };
+            obsAnimationTimer.Tick += delegate { obsAnimationTimer.Stop(); PublishObsFrame(false); };
             Closed += OnClosed;
             PreviewKeyDown += delegate(object sender, KeyEventArgs e)
             {
@@ -222,7 +232,7 @@ namespace NoteView
             pedalGroup.Visibility = Visibility.Collapsed; Grid.SetColumn(pedalGroup, 2); harmony.Children.Add(pedalGroup);
             chordCard.Child = harmony;
             layoutBoard = new LayoutBoard(staff, keyboard, chordCard);
-            layoutBoard.Changed += delegate { obsDirty = true; if (settingsWindow != null) { settingsWindow.RefreshScoreControls(); settingsWindow.RefreshControlTransforms(); } };
+            layoutBoard.Changed += delegate { QueueObsFrame(); if (settingsWindow != null) { settingsWindow.RefreshScoreControls(); settingsWindow.RefreshControlTransforms(); } };
             layoutBoard.Finished += SaveSettings;
             var layoutHost = new Viewbox { Child = layoutBoard, Stretch = Stretch.Uniform };
             Grid.SetRow(layoutHost, 1); musicArea.Children.Add(layoutHost);
@@ -357,21 +367,7 @@ namespace NoteView
             input.MessageReceived += delegate(object sender, MidiMessageEventArgs e)
             {
                 if (closing || Dispatcher.HasShutdownStarted) return;
-                Dispatcher.BeginInvoke(new Action(delegate
-                {
-                    if (closing || midi != input) return;
-                    if (Settings.Channel != 0 && (e.Status & 15) != Settings.Channel - 1) return;
-                    if (demo && (e.Status & 240) == 144 && e.Data2 > 0) StopDemo();
-                    receivedCount++;
-                    int kind = e.Status & 240;
-                    if (kind != 128 && kind != 144 && !(kind == 176 && (e.Data1 == 64 || e.Data1 == 120 || e.Data1 == 121 || e.Data1 == 123))) return;
-                    string before = ChordPitchSet(notes);
-                    notes.Process(e.Status, e.Data1, e.Data2);
-                    dirty = true;
-                    if (before != ChordPitchSet(notes)) chordChangedAt = DateTime.UtcNow;
-                    if ((e.Status & 240) == 144 && e.Data2 > 0)
-                        footer.Text = MusicTheory.DisplaySymbol(KeySignature.Spell(e.Data1, Settings.KeySignatureFifths, Settings.Flats).Name) + "  ·  力度 " + e.Data2 + " / 127  ·  通道 " + ((e.Status & 15) + 1) + "  ·  已收到 " + receivedCount + " 条 MIDI 消息";
-                }));
+                Dispatcher.BeginInvoke(new Action(delegate { ProcessMidiMessage(input, e); }));
             };
             input.Disconnected += delegate
             {
@@ -392,6 +388,30 @@ namespace NoteView
                 status.ToolTip = "若其他音乐软件占用了 MIDI 端口，请关闭该软件的 MIDI 输入后重试。\n" + ex.Message;
             }
         }
+        internal void ProcessMidiMessage(MidiInput input, MidiMessageEventArgs e)
+        {
+            if (closing || midi != input) return;
+            if (Settings.Channel != 0 && (e.Status & 15) != Settings.Channel - 1) return;
+            if (demo && (e.Status & 240) == 144 && e.Data2 > 0) StopDemo();
+            receivedCount++;
+            int kind = e.Status & 240;
+            if (kind != 128 && kind != 144 && !(kind == 176 && (e.Data1 == 64 || e.Data1 == 120 || e.Data1 == 121 || e.Data1 == 123))) return;
+            string before = ChordPitchSet(notes);
+            notes.Process(e.Status, e.Data1, e.Data2);
+            dirty = true;
+            if (before != ChordPitchSet(notes)) chordChangedAt = DateTime.UtcNow;
+            if (kind == 144 && e.Data2 > 0)
+                footer.Text = MusicTheory.DisplaySymbol(KeySignature.Spell(e.Data1, Settings.KeySignatureFifths, Settings.Flats).Name) + "  ·  力度 " + e.Data2 + " / 127  ·  通道 " + ((e.Status & 15) + 1) + "  ·  已收到 " + receivedCount + " 条 MIDI 消息";
+            if (noteRenderQueued) return;
+            noteRenderQueued = true;
+            // All already queued MIDI callbacks retain their order at Normal
+            // priority; one Render callback then consumes the complete burst.
+            Dispatcher.BeginInvoke(DispatcherPriority.Render, new Action(delegate
+            {
+                noteRenderQueued = false;
+                if (!closing && dirty) RenderNotes(false);
+            }));
+        }
         private void Disconnect()
         {
             var previous = midi; midi = null;
@@ -406,7 +426,7 @@ namespace NoteView
         {
             bool changed = harmonyColor.Update(active, Settings.IncludeSustainInChord, KeySignature.UsesFlats(Settings.KeySignatureFifths, Settings.Flats));
             string display = harmonyColor.Chord != null && harmonyColor.Chord.IsRecognized ? MusicTheory.DisplaySymbol(harmonyColor.Chord.Symbol) : "";
-            if (chordSymbol.Text != display) { chordSymbol.Text = display; chordSymbol.ToolTip = display; obsDirty = true; }
+            if (chordSymbol.Text != display) { chordSymbol.Text = display; chordSymbol.ToolTip = display; QueueObsFrame(); }
             Settings.HarmonyTint = harmonyColor.Hex;
             Settings.HarmonyMemoryTint = harmonyColor.MemoryHex;
             Settings.HarmonyRelationTint = harmonyColor.RelationHex;
@@ -422,7 +442,7 @@ namespace NoteView
                 chordSymbol.Foreground = HarmonyVisuals.Accent(Settings.HarmonyTint, Settings.HarmonyMemoryTint,
                     Settings.HarmonyRelationTint, Settings.HarmonyHistoryStrength, Settings.HarmonyVariationStrength);
                 layoutBoard.RefreshAtmosphere();
-                staff.Refresh(); keyboard.Refresh(); obsDirty = true;
+                staff.Refresh(); keyboard.Refresh(); QueueObsFrame();
             }
             return changed;
         }
@@ -430,7 +450,7 @@ namespace NoteView
         {
             var active = (demo ? demoNotes : notes).GetActiveNotes();
             bool colorChanged = UpdateHarmonyTint(active);
-            if (active.Count == 0) return;
+            if (active.Count == 0) { PublishObsFrame(false); return; }
             if (ChordPitchSet(demo ? demoNotes : notes) != string.Join(",", staff.Notes.Where(n => n.IsHeld || (Settings.IncludeSustainInChord && n.Brightness > 0)).Select(n => n.Number)))
             { RenderNotes(true); return; }
             if (!colorChanged && staff.Notes != null && active.Count == staff.Notes.Count &&
@@ -440,6 +460,7 @@ namespace NoteView
                     n.TintG == staff.Notes[i].TintG && n.TintB == staff.Notes[i].TintB).All(equal => equal)) return;
             keyboard.Notes = active; staff.Notes = active;
             keyboard.Refresh(); staff.Refresh(); obsDirty = true;
+            PublishObsFrame(false);
         }
         private void RenderNotes(bool forceChord)
         {
@@ -466,6 +487,7 @@ namespace NoteView
                 chordRenderedAt = DateTime.UtcNow;
                 dirty = false;
             }
+            PublishObsFrame(false);
         }
         private string ChordPitchSet(NoteState state)
         { return string.Join(",", state.GetActiveNotes().Where(n => n.IsHeld || (Settings.IncludeSustainInChord && n.Brightness > 0)).Select(n => n.Number)); }
@@ -509,7 +531,7 @@ namespace NoteView
         { notes.Clear(); dirty = true; ApplySettings(); }
         internal void SetScoreTransform(double scale, double x, double y, bool save = false)
         {
-            obsDirty = true;
+            QueueObsFrame();
             Settings.StaffScale = ClampScoreValue(scale, .2, 2, 1);
             Settings.StaffOffsetX = ClampScoreValue(x, -1120, 1120, 0);
             Settings.StaffOffsetY = ClampScoreValue(y, -640, 640, 0);
@@ -523,7 +545,7 @@ namespace NoteView
             Settings.KeyboardScale = ClampScoreValue(scale, .2, 1.5, 1);
             Settings.KeyboardOffsetX = ClampScoreValue(x, -1120, 1120, 0);
             Settings.KeyboardOffsetY = ClampScoreValue(y, -640, 640, 0);
-            layoutBoard.Apply(Settings); obsDirty = true;
+            layoutBoard.Apply(Settings); QueueObsFrame();
             if (settingsWindow != null) settingsWindow.RefreshControlTransforms();
             if (save) SaveSettings();
         }
@@ -533,7 +555,7 @@ namespace NoteView
             Settings.HarmonyOffsetX = ClampScoreValue(x, -1120, 1120, 0);
             Settings.HarmonyOffsetY = ClampScoreValue(y, -640, 640, 0);
             layoutBoard.Apply(Settings);
-            obsDirty = true;
+            QueueObsFrame();
             if (settingsWindow != null) settingsWindow.RefreshControlTransforms();
             if (save) SaveSettings();
         }
@@ -581,6 +603,7 @@ namespace NoteView
                 try
                 {
                     var output = new ObsOutputServer();
+                    ObserveObsClients(output);
                     try { output.Start(); } catch { output.Dispose(); throw; }
                     obsOutput = output;
                     obsWorker = new ObsFrameWorker(
@@ -593,23 +616,61 @@ namespace NoteView
                         });
                     obsDirty = true;
                     PublishObsFrame(true);
-                    if (obsOutput != null) obsTimer.Start();
                 }
                 catch (Exception ex) { StopObsOutputWithError(ex); }
             }
             if (settingsWindow != null) settingsWindow.RefreshObsControls();
         }
+        private void ObserveObsClients(ObsOutputServer output)
+        {
+            output.ClientActive += delegate
+            {
+                if (closing || Dispatcher.HasShutdownStarted) return;
+                Dispatcher.BeginInvoke(new Action(delegate
+                { if (!closing && obsOutput == output) QueueObsFrame(); }));
+            };
+        }
+        private void QueueObsFrame()
+        {
+            obsDirty = true;
+            if (animationTick) { QueueObsAnimation(); return; }
+            if (obsPublishQueued || obsOutput == null || closing || Dispatcher.HasShutdownStarted) return;
+            obsPublishQueued = true;
+            Dispatcher.BeginInvoke(DispatcherPriority.Render, new Action(delegate
+            {
+                obsPublishQueued = false;
+                if (closing) return;
+                // A MIDI burst must update the note/tint snapshot before a
+                // simultaneous settings or client-activation request submits it.
+                if (noteRenderQueued) { QueueObsFrame(); return; }
+                PublishObsFrame(false);
+            }));
+        }
         private void PublishObsFrame(bool force)
         {
             if (obsOutput == null || obsWorker == null || (!force && (!obsDirty || !obsOutput.HasRecentClients))) return;
+            if (!force && animationTick) { QueueObsAnimation(); return; }
             try
             {
+                obsAnimationTimer.Stop();
                 NoteState current = demo ? demoNotes : notes;
                 obsWorker.Submit(Settings, staff.Notes, chordSymbol.Text,
                     chordDescription.Text, chordAlternatives.Text, current.SustainDown);
+                lastObsSubmit = Stopwatch.GetTimestamp();
                 obsDirty = false;
             }
             catch (Exception ex) { StopObsOutputWithError(ex); }
+        }
+        private void QueueObsAnimation()
+        {
+            if (obsAnimationTimer.IsEnabled || !obsDirty || closing || obsOutput == null ||
+                obsWorker == null || !obsOutput.HasRecentClients) return;
+            // Preserve the former ~30/s animation ceiling without delaying a
+            // strike. Only a dirty animation starts this one-shot timer; MIDI
+            // and settings publish immediately and cancel it.
+            double elapsed = (Stopwatch.GetTimestamp() - lastObsSubmit) * 1000.0 / Stopwatch.Frequency;
+            obsAnimationTimer.Interval = TimeSpan.FromMilliseconds(Math.Max(1, 33 - elapsed));
+            obsAnimationTimer.Start();
         }
         private void StopObsOutputWithError(Exception ex)
         {
@@ -619,7 +680,7 @@ namespace NoteView
         }
         private void StopObsOutput()
         {
-            obsTimer.Stop();
+            obsAnimationTimer.Stop();
             if (obsWorker != null) { obsWorker.Dispose(); obsWorker = null; }
             if (obsOutput != null) { obsOutput.Dispose(); obsOutput = null; }
         }

@@ -9,7 +9,7 @@ New-Item -ItemType Directory -Path $output -Force | Out-Null
 $references = @('System.dll','System.Core.dll','System.Xml.dll','System.Xaml.dll','System.Drawing.dll','System.Windows.Forms.dll') | ForEach-Object { '/reference:' + (Join-Path $framework $_) }
 $references += @('WindowsBase.dll','PresentationCore.dll','PresentationFramework.dll') | ForEach-Object { '/reference:' + (Join-Path $framework ('WPF\' + $_)) }
 $sources = @(Get-ChildItem -LiteralPath (Join-Path $projectRoot 'src') -Filter '*.cs' | ForEach-Object FullName)
-& $compiler /nologo /target:winexe /platform:x64 /optimize+ /codepage:65001 ('/out:' + (Join-Path $output 'NoteView.exe')) ('/win32manifest:' + (Join-Path $projectRoot 'app.manifest')) @references @sources
+& $compiler /nologo /target:winexe /platform:x64 /optimize+ /unsafe+ /codepage:65001 ('/out:' + (Join-Path $output 'NoteView.exe')) ('/win32manifest:' + (Join-Path $projectRoot 'app.manifest')) @references @sources
 if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
 Copy-Item -LiteralPath (Join-Path $projectRoot 'assets') -Destination $output -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $projectRoot 'NoteView.exe.config') -Destination $output -Force

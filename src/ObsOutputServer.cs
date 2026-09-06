@@ -34,6 +34,9 @@ namespace NoteView
         private string url;
 
         public string Url { get { lock (sync) return url; } }
+        // Raised on a client worker when frame polling starts/resumes after
+        // inactivity. The UI can submit its newest snapshot without a timer.
+        public event Action ClientActive;
 
         public bool HasRecentClients
         {
@@ -88,6 +91,7 @@ namespace NoteView
                 ThrowIfDisposed();
                 latestFrame = snapshot;
                 frameVersion = frameVersion == long.MaxValue ? 1 : frameVersion + 1;
+                Monitor.PulseAll(sync);
             }
         }
 
@@ -225,35 +229,62 @@ namespace NoteView
         {
             long after = -1;
             string requestedSession = null;
+            int waitMilliseconds = 0;
             if (target.Length > "/frame.png".Length)
             {
                 const string prefix = "/frame.png?after=";
                 if (!target.StartsWith(prefix, StringComparison.Ordinal))
                 { SendError(stream, 400, "Bad Request", head); return; }
-                string versionText = target.Substring(prefix.Length);
-                int separator = versionText.IndexOf('&');
-                if (separator >= 0)
+                string[] arguments = target.Substring(prefix.Length).Split('&');
+                string versionText = arguments[0];
+                bool sawWait = false;
+                for (int index = 1; index < arguments.Length; index++)
                 {
-                    string sessionText = versionText.Substring(separator);
-                    versionText = versionText.Substring(0, separator);
-                    if (!sessionText.StartsWith("&session=", StringComparison.Ordinal))
-                    { SendError(stream, 400, "Bad Request", head); return; }
-                    requestedSession = sessionText.Substring("&session=".Length);
-                    if (requestedSession.Length != 0 && requestedSession.Length != 32)
-                    { SendError(stream, 400, "Bad Request", head); return; }
-                    foreach (char value in requestedSession)
-                        if (!(value >= '0' && value <= '9') && !(value >= 'a' && value <= 'f'))
+                    string argument = arguments[index];
+                    if (argument.StartsWith("session=", StringComparison.Ordinal) && requestedSession == null)
+                    {
+                        requestedSession = argument.Substring("session=".Length);
+                        if (requestedSession.Length != 0 && requestedSession.Length != 32)
                         { SendError(stream, 400, "Bad Request", head); return; }
+                        foreach (char value in requestedSession)
+                            if (!(value >= '0' && value <= '9') && !(value >= 'a' && value <= 'f'))
+                            { SendError(stream, 400, "Bad Request", head); return; }
+                    }
+                    else if (argument.StartsWith("wait=", StringComparison.Ordinal) && !sawWait)
+                    {
+                        sawWait = true;
+                        if (!int.TryParse(argument.Substring(5), NumberStyles.None, CultureInfo.InvariantCulture, out waitMilliseconds) || waitMilliseconds > 1000)
+                        { SendError(stream, 400, "Bad Request", head); return; }
+                    }
+                    else { SendError(stream, 400, "Bad Request", head); return; }
                 }
                 if (!long.TryParse(versionText, NumberStyles.None, CultureInfo.InvariantCulture, out after))
                 { SendError(stream, 400, "Bad Request", head); return; }
             }
             byte[] frame;
             long version;
+            bool becameActive;
             lock (sync)
             {
+                becameActive = !hasClientTimestamp ||
+                    (Stopwatch.GetTimestamp() - lastClientTimestamp) / (double)Stopwatch.Frequency >= 3.0;
                 lastClientTimestamp = Stopwatch.GetTimestamp();
                 hasClientTimestamp = true;
+            }
+            if (becameActive)
+            {
+                Action active = ClientActive;
+                if (active != null) { try { active(); } catch { } }
+            }
+            Stopwatch elapsed = Stopwatch.StartNew();
+            lock (sync)
+            {
+                // Optional bounded long polling: no frame queue and at most the
+                // existing eight client workers. Publish/Dispose wake all waiters.
+                while (!head && !disposed && waitMilliseconds > elapsed.ElapsedMilliseconds &&
+                    (latestFrame == null || (after == frameVersion && requestedSession == session)))
+                    Monitor.Wait(sync, Math.Max(1, waitMilliseconds - (int)elapsed.ElapsedMilliseconds));
+                if (disposed) return;
                 frame = latestFrame;
                 version = frameVersion;
             }
@@ -301,6 +332,7 @@ namespace NoteView
                 pending = new TcpClient[clients.Count];
                 clients.CopyTo(pending);
                 latestFrame = null;
+                Monitor.PulseAll(sync);
             }
             // Stop() only closes the listening socket; accepted sockets need
             // their own close to release workers blocked in reads or writes.
@@ -351,12 +383,11 @@ html,body{width:100%;height:100%;margin:0;padding:0;overflow:hidden;background:t
   }, 100);
   async function poll() {
     if (stopped) return;
-    const started = performance.now();
-    let retry = 33, pendingUrl = null;
+    let retry = 0, pendingUrl = null;
     controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 2000);
     try {
-      const response = await fetch('/frame.png?after=' + version + '&session=' + session, {cache:'no-store', signal:controller.signal});
+      const response = await fetch('/frame.png?after=' + version + '&session=' + session + '&wait=1000', {cache:'no-store', signal:controller.signal});
       const nextVersion = response.headers.get('X-Frame-Version');
       const nextSession = response.headers.get('X-Frame-Session');
       if (!nextVersion || !/^[0-9]+$/.test(nextVersion)) throw new Error('Invalid frame version');
@@ -393,7 +424,9 @@ html,body{width:100%;height:100%;margin:0;padding:0;overflow:hidden;background:t
       clearTimeout(timeout);
       if (pendingUrl) URL.revokeObjectURL(pendingUrl);
       controller = null;
-      if (!stopped) pollTimer = setTimeout(poll, Math.max(0, retry - (performance.now() - started)));
+      // Exactly one request remains in flight. The server waits for a new
+      // version, so a completed PNG need not sit behind a 33 ms polling gap.
+      if (!stopped) pollTimer = setTimeout(poll, retry);
     }
   }
   window.addEventListener('pagehide', () => {

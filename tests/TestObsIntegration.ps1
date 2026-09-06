@@ -7,7 +7,7 @@ $references = @('System.dll','System.Core.dll','System.Xml.dll','System.Xaml.dll
 $references += @('WindowsBase.dll','PresentationCore.dll','PresentationFramework.dll') | ForEach-Object { '/reference:' + (Join-Path $framework ('WPF\' + $_)) }
 $sources = @(Get-ChildItem -LiteralPath (Join-Path $projectRoot 'src') -Filter '*.cs' | ForEach-Object FullName)
 $testExe = Join-Path $testOutput 'ObsIntegrationTests.exe'
-& (Join-Path $framework 'csc.exe') /nologo /target:exe /platform:x64 /codepage:65001 /main:NoteView.ObsIntegrationTests ('/out:' + $testExe) @references @sources (Join-Path $PSScriptRoot 'ObsIntegrationTests.cs')
+& (Join-Path $framework 'csc.exe') /nologo /target:exe /platform:x64 /optimize+ /unsafe+ /codepage:65001 /main:NoteView.ObsIntegrationTests ('/out:' + $testExe) @references @sources (Join-Path $PSScriptRoot 'ObsIntegrationTests.cs')
 if ($LASTEXITCODE -ne 0) { throw 'OBS integration tests did not compile.' }
 Copy-Item -LiteralPath (Join-Path $projectRoot 'assets') -Destination $testOutput -Recurse -Force
 $testProcess = Start-Process -FilePath $testExe -WindowStyle Hidden -PassThru -Wait -RedirectStandardOutput (Join-Path $testOutput 'test.log') -RedirectStandardError (Join-Path $testOutput 'errors.log')

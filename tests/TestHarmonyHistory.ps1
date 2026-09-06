@@ -7,7 +7,7 @@ $references = @('System.dll','System.Core.dll','System.Xml.dll','System.Xaml.dll
 $references += @('WindowsBase.dll','PresentationCore.dll','PresentationFramework.dll') | ForEach-Object { '/reference:' + (Join-Path $framework ('WPF\' + $_)) }
 $sources = @(Get-ChildItem -LiteralPath (Join-Path $projectRoot 'src') -Filter '*.cs' | ForEach-Object FullName)
 $testExe = Join-Path $testOutput 'HarmonyHistoryTests.exe'
-& (Join-Path $framework 'csc.exe') /nologo /target:exe /platform:x64 /codepage:65001 /main:NoteView.HarmonyHistoryTests ('/out:' + $testExe) @references @sources (Join-Path $PSScriptRoot 'HarmonyHistoryTests.cs')
+& (Join-Path $framework 'csc.exe') /nologo /target:exe /platform:x64 /optimize+ /unsafe+ /codepage:65001 /main:NoteView.HarmonyHistoryTests ('/out:' + $testExe) @references @sources (Join-Path $PSScriptRoot 'HarmonyHistoryTests.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Harmony history tests did not compile.' }
 Copy-Item -LiteralPath (Join-Path $projectRoot 'assets') -Destination $testOutput -Recurse -Force
 $testProcess = Start-Process -FilePath $testExe -WindowStyle Hidden -PassThru -Wait -RedirectStandardOutput (Join-Path $testOutput 'history-test.log') -RedirectStandardError (Join-Path $testOutput 'history-test-errors.log')

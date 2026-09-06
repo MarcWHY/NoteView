@@ -20,6 +20,7 @@ namespace NoteView
         private readonly Rectangle atmosphere;
         private string atmosphereKey;
         private AppSettings settings;
+        internal bool DrawAtmosphere = true;
         public event Action Changed;
         public event Action Finished;
         public LayoutBoard(FrameworkElement score, FrameworkElement keyboard, FrameworkElement harmony)
@@ -98,7 +99,7 @@ namespace NoteView
         }
         public void RefreshAtmosphere()
         {
-            if (settings == null) return;
+            if (settings == null || !DrawAtmosphere) return;
             Rect score = Bounds(0), keyboard = Bounds(1), harmony = Bounds(2);
             // Reuse frozen gradients while only note brightness changes (the usual steady chord).
             string key = string.Format(CultureInfo.InvariantCulture, "{0}|{1}|{2}|{3:F3}|{4:F3}|{5:F3}|{6:F3}|{7}|{8}|{9}",

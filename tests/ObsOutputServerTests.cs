@@ -33,6 +33,7 @@ public static class ObsOutputServerTests
             TestBoundedConnections();
             TestLifecycle();
             TestRestartAtSameVersion();
+            TestLongPolling();
             Console.WriteLine("ObsOutputServerTests: PASS ({0} assertions)", assertions);
             return 0;
         }
@@ -40,6 +41,75 @@ public static class ObsOutputServerTests
         {
             Console.Error.WriteLine("ObsOutputServerTests: FAIL after {0} assertions: {1}", assertions, exception);
             return 1;
+        }
+    }
+
+    private static void TestLongPolling()
+    {
+        using (var server = new ObsOutputServer())
+        {
+            int activations = 0;
+            server.ClientActive += delegate { Interlocked.Increment(ref activations); };
+            server.Start(0);
+            Uri uri = new Uri(server.Url);
+            server.PublishFrame(new byte[] { 1 });
+            Response current = Request(uri, "GET", "/frame.png");
+            var delays = new List<double>();
+            for (int sample = 0; sample < 5; sample++)
+            {
+                string query = "/frame.png?after=" + current.Header("X-Frame-Version") +
+                    "&session=" + current.Header("X-Frame-Session") + "&wait=1000";
+                Response next = null; Exception failure = null;
+                using (var completed = new ManualResetEvent(false))
+                {
+                    var thread = new Thread(delegate()
+                    {
+                        try { next = Request(uri, "GET", query); } catch (Exception ex) { failure = ex; }
+                        finally { completed.Set(); }
+                    }) { IsBackground = true };
+                    thread.Start();
+                    True(!completed.WaitOne(40), "unchanged long poll waits instead of returning a repeated frame");
+                    var elapsed = Stopwatch.StartNew();
+                    server.PublishFrame(new byte[] { (byte)(sample + 2) });
+                    True(completed.WaitOne(1500) && thread.Join(1500) && failure == null,
+                        "publishing immediately wakes the waiting browser request");
+                    elapsed.Stop(); delays.Add(elapsed.Elapsed.TotalMilliseconds);
+                    Equal(200, next.Status, "long poll returns newly published frame");
+                    Equal((byte)(sample + 2), next.Body[0], "long poll snapshot never falls back to an earlier frame");
+                    current = next;
+                }
+            }
+            Equal(1, activations, "active long polling does not flood client-activation callbacks");
+            string retained = "/frame.png?after=" + current.Header("X-Frame-Version") + "&session=" + current.Header("X-Frame-Session");
+            var heartbeat = Stopwatch.StartNew();
+            Equal(204, Request(uri, "GET", retained + "&wait=120").Status, "unchanged long poll ends with a heartbeat");
+            True(heartbeat.ElapsedMilliseconds >= 100 && heartbeat.ElapsedMilliseconds < 1500, "long-poll waiting has a finite deadline");
+            Equal(204, Request(uri, "GET", retained).Status, "legacy no-wait clients keep immediate unchanged responses");
+            Equal(400, Request(uri, "GET", retained + "&wait=1001").Status, "long polling cannot request an unbounded wait");
+            Equal(400, Request(uri, "GET", retained + "&wait=-1").Status, "negative waits are rejected");
+            Equal(400, Request(uri, "GET", retained + "&wait=1&wait=2").Status, "duplicate wait parameters are rejected");
+            using (var completed = new ManualResetEvent(false))
+            {
+                var thread = new Thread(delegate()
+                {
+                    try { Request(uri, "GET", retained + "&wait=1000"); } catch { }
+                    finally { completed.Set(); }
+                }) { IsBackground = true };
+                thread.Start(); True(!completed.WaitOne(40), "shutdown test has a waiting long poll");
+                var closing = Stopwatch.StartNew(); server.Dispose();
+                True(completed.WaitOne(1000) && thread.Join(1000), "Dispose wakes long polling and closes its socket");
+                True(closing.ElapsedMilliseconds < 1000, "shutdown does not wait out the long-poll deadline");
+            }
+            delays.Sort();
+            Console.WriteLine("Long-poll publish-to-response: median={0:F3} ms, max={1:F3} ms (5 local requests; excludes PNG rendering)", delays[2], delays[4]);
+        }
+        using (var server = new ObsOutputServer())
+        {
+            server.Start(0);
+            server.ClientActive += delegate { server.PublishFrame(new byte[] { 99 }); };
+            Response first = Request(new Uri(server.Url), "GET", "/frame.png?after=0&session=&wait=1000");
+            Equal(200, first.Status, "first client can trigger its initial frame without any submission timer");
+            Equal((byte)99, first.Body[0], "client-triggered first publication is not lost before waiting begins");
         }
     }
 

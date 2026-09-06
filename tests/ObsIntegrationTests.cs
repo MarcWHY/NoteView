@@ -29,6 +29,7 @@ namespace NoteView
                 var output = new ObsOutputServer();
                 output.Start(0);
                 SetField(main, "obsOutput", output);
+                Invoke(main, "ObserveObsClients", output);
                 SetField(main, "obsWorker", new ObsFrameWorker(output.PublishFrame, delegate(Exception ex) { throw new Exception("OBS worker failed", ex); }));
                 Invoke(main, "PublishObsFrame", true);
                 byte[] initial = WaitForFrame(output.Url, null);
@@ -37,8 +38,6 @@ namespace NoteView
                 Check(initialImage.PixelWidth == ObsFrameRenderer.PixelWidth && initialImage.PixelHeight == ObsFrameRenderer.PixelHeight, "1.5x OBS resolution");
                 var pixels = new byte[ObsFrameRenderer.PixelWidth * ObsFrameRenderer.PixelHeight * 4]; initialImage.CopyPixels(pixels, ObsFrameRenderer.PixelWidth * 4, 0);
                 Check(pixels[3] == 0 && pixels.Where((b, i) => i % 4 == 3).Any(b => b > 0), "transparent background with visible score");
-                var timer = Field<DispatcherTimer>(main, "obsTimer");
-                timer.Start();
                 main.WindowState = WindowState.Minimized; Pump(60);
                 Check(main.WindowState == WindowState.Minimized, "main window is actually minimized");
                 var notes = new NoteState(delegate { return visualTime; });
@@ -46,7 +45,7 @@ namespace NoteView
                 notes.Process(0x90, 60, 110); notes.Process(0x90, 64, 80); notes.Process(0x90, 67, 95);
                 Invoke(main, "RenderNotes", true);
                 byte[] held = WaitForFrame(output.Url, initial);
-                Check(!initial.SequenceEqual(held), "new MIDI notes update HTTP PNG through timer while minimized");
+                Check(!initial.SequenceEqual(held), "new MIDI notes update HTTP PNG without an OBS timer while minimized");
                 File.WriteAllBytes(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "obs-minimized-held.png"), held);
                 visualTime = 3;
                 Invoke(main, "AnimateNotes");
@@ -74,8 +73,12 @@ namespace NoteView
                     "clearing notes preserves the atmosphere for a continuous release");
                 for (int step = 0; step < 120; step++)
                 { visualTime += .1; Invoke(main, "AnimateNotes"); }
-                byte[] quiet = WaitForFrame(output.Url, cleared);
+                // Event-driven submission may have a fade snapshot already in
+                // flight. Await the terminal state, not merely the first change.
+                byte[] quiet = WaitForExactFrame(output.Url, initial);
                 Check(initial.SequenceEqual(quiet), "silence restores exact initial frame after the atmosphere fades while minimized");
+                Pump(100);
+                Check(initial.SequenceEqual(GetFrame(output.Url)), "a completed newest snapshot cannot roll back to an older queued fade frame");
                 string address = output.Url;
                 main.Close(); main = null;
                 bool stopped = false;
@@ -107,6 +110,17 @@ namespace NoteView
         }
         private static BitmapSource Decode(byte[] bytes)
         { using (var stream = new MemoryStream(bytes)) return BitmapFrame.Create(stream, BitmapCreateOptions.None, BitmapCacheOption.OnLoad); }
+        private static byte[] WaitForExactFrame(string address, byte[] expected)
+        {
+            byte[] png = null;
+            for (int attempt = 0; attempt < 50; attempt++)
+            {
+                Pump(40); png = GetFrame(address);
+                if (expected.SequenceEqual(png)) return png;
+            }
+            File.WriteAllBytes(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "unexpected-final-frame.png"), png ?? new byte[0]);
+            throw new Exception("The terminal OBS frame did not arrive within two seconds");
+        }
         private static void Check(bool condition, string label)
         { if (!condition) throw new Exception(label); checks++; }
         private static T Field<T>(object target, string name)
