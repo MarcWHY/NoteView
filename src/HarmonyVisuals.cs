@@ -11,25 +11,31 @@ namespace NoteView
         {
             double intensity = Clamp(settings.AtmosphereOpacity / 100) * Clamp(settings.HarmonyAtmosphereStrength);
             if (intensity <= 0) return Brushes.Transparent;
-            Color primary = Parse(settings.HarmonyTint, Color.FromRgb(164, 188, 203));
-            Color memory = Parse(settings.HarmonyMemoryTint, primary);
-            Color relation = Parse(settings.HarmonyRelationTint, primary);
+            Color primary = Vivid(Parse(settings.HarmonyTint, Color.FromRgb(164, 188, 203)));
+            Color memory = Vivid(Parse(settings.HarmonyMemoryTint, primary));
+            Color relation = Vivid(Parse(settings.HarmonyRelationTint, primary));
             double history = Clamp(settings.HarmonyHistoryStrength), variation = Clamp(settings.HarmonyVariationStrength);
+            double colorfulness = Math.Max(variation, history * .8);
             var drawing = new DrawingGroup();
             using (DrawingContext dc = drawing.Open())
             {
-                // Ellipses are contained within the board and feather completely to alpha zero.
-                // They follow the movable controls, rather than tinting an opaque full-window rectangle.
-                Glow(dc, new Point(score.X + score.Width * .53, score.Y + score.Height * .48),
-                    score.Width * .72, score.Height * .68, primary, intensity);
-                Glow(dc, new Point(score.X + score.Width * .30, score.Y + score.Height * .60),
-                    score.Width * .56, score.Height * .52, memory, intensity * history * .48);
+                // Keep the harmonic colors spatially distinct before their edges
+                // blend. Averaging them into one large glow loses the chord's color.
+                Glow(dc, new Point(score.X + score.Width * (.53 - .16 * colorfulness), score.Y + score.Height * (.56 + .12 * history)),
+                    score.Width * .76, score.Height * .70, primary,
+                    Mix(primary, relation, colorfulness * .55), intensity * (1 - .18 * colorfulness));
+                Glow(dc, new Point(score.X + score.Width * .76, score.Y + score.Height * .32),
+                    score.Width * .51, score.Height * .50, relation,
+                    Mix(relation, primary, .38), intensity * Math.Max(variation, history * .45) * 1.3);
+                Glow(dc, new Point(score.X + score.Width * .14, score.Y + score.Height * .31),
+                    score.Width * .64, score.Height * .38, memory,
+                    Mix(memory, primary, .25), intensity * history * 1.45);
                 Glow(dc, new Point(harmony.X + Math.Min(harmony.Width * .24, 170), harmony.Y + harmony.Height * .48),
                     Math.Min(420, harmony.Width * .62), Math.Max(70, harmony.Height * 1.25),
-                    Mix(primary, relation, Math.Max(variation, history * .60)), intensity * .85);
+                    Mix(primary, relation, colorfulness * .88), primary, intensity * .85);
                 Glow(dc, new Point(keyboard.X + keyboard.Width * .54, keyboard.Y + keyboard.Height * .60),
                     keyboard.Width * .43, Math.Max(45, keyboard.Height * .82),
-                    Mix(primary, relation, variation * .72), intensity * .35);
+                    primary, Mix(primary, relation, colorfulness), intensity * .48);
             }
             drawing.Freeze();
             // A soft, low-frequency atmosphere does not need the foreground's pixel density.
@@ -44,7 +50,8 @@ namespace NoteView
             brush.Freeze(); return brush;
         }
 
-        private static void Glow(DrawingContext dc, Point center, double radiusX, double radiusY, Color color, double intensity)
+        private static void Glow(DrawingContext dc, Point center, double radiusX, double radiusY,
+            Color core, Color edge, double intensity)
         {
             if (intensity <= .001) return;
             // Keep even controls placed at the board boundary from leaving a hard glowing edge.
@@ -53,10 +60,10 @@ namespace NoteView
             radiusX = Math.Min(radiusX, Math.Min(center.X, 1120 - center.X));
             radiusY = Math.Min(radiusY, Math.Min(center.Y, 640 - center.Y));
             var glow = new RadialGradientBrush { RadiusX = .5, RadiusY = .5 };
-            glow.GradientStops.Add(new GradientStop(WithAlpha(color, (byte)Math.Round(255 * Clamp(intensity))), 0));
-            glow.GradientStops.Add(new GradientStop(WithAlpha(color, (byte)Math.Round(255 * Clamp(intensity * .62))), .34));
-            glow.GradientStops.Add(new GradientStop(WithAlpha(color, (byte)Math.Round(255 * Clamp(intensity * .16))), .70));
-            glow.GradientStops.Add(new GradientStop(WithAlpha(color, 0), 1));
+            glow.GradientStops.Add(new GradientStop(WithAlpha(core, (byte)Math.Round(255 * Clamp(intensity))), 0));
+            glow.GradientStops.Add(new GradientStop(WithAlpha(Mix(core, edge, .32), (byte)Math.Round(255 * Clamp(intensity * .80))), .30));
+            glow.GradientStops.Add(new GradientStop(WithAlpha(edge, (byte)Math.Round(255 * Clamp(intensity * .34))), .66));
+            glow.GradientStops.Add(new GradientStop(WithAlpha(edge, 0), 1));
             glow.Freeze();
             dc.DrawEllipse(glow, null, center, radiusX, radiusY);
         }
@@ -92,6 +99,18 @@ namespace NoteView
         }
         private static Color WithAlpha(Color color, byte alpha)
         { color.A = alpha; return color; }
+        private static Color Vivid(Color color)
+        {
+            double high = Math.Max(color.R, Math.Max(color.G, color.B));
+            double low = Math.Min(color.R, Math.Min(color.G, color.B));
+            double middle = (high + low) * .5;
+            // Blended extensions can be much paler than the base. Give both
+            // enough chroma to survive faint alpha compositing, without changing hue.
+            double saturation = high > low ? Math.Max(1.4, Math.Min(3, 105 / (high - low))) : 1;
+            return Color.FromRgb(Saturate(color.R, middle, saturation), Saturate(color.G, middle, saturation), Saturate(color.B, middle, saturation));
+        }
+        private static byte Saturate(byte component, double middle, double saturation)
+        { return (byte)Math.Round(Math.Max(0, Math.Min(255, middle + (component - middle) * saturation))); }
         private static double Clamp(double value)
         { return double.IsNaN(value) || double.IsInfinity(value) ? 0 : Math.Max(0, Math.Min(1, value)); }
     }

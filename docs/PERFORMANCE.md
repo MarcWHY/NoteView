@@ -25,6 +25,17 @@ v0.2.1 针对击键到显示之间的等待，以及每帧重复的绘制与编�
 
 ## 复现与回归
 
+v0.2.2 的多色氛围仍使用 280×160 冻结纹理，沿用现有背景缓存和像素合成。2026-10-18 用上述方法比较本机修改前、后的程序集（12% 氛围），结果如下；这是出图耗时，仍不等于端到端演奏延迟。
+
+| 场景 | 修改前平均出图 | v0.2.2 平均出图 |
+| --- | ---: | ---: |
+| 8 个实按音 | 56.43 ms | 58.93 ms |
+| 8 个踏板延留音 | 56.46 ms | 58.66 ms |
+| 8 音混合，含踏板延留 | 56.74 ms | 57.09 ms |
+| 88 音密集压力场景 | 106.24 ms | 107.14 ms |
+
+对应基准标签为 `atmosphere-before-v022` 与 `atmosphere-final-v022`。`TestAtmosphereVisual.ps1` 另外验证实际 C 大九和弦持续按住 5.5 秒后仍有独立色区，以及历史余色、透明边角、位置缩放和关闭氛围后的清零。
+
 ```powershell
 .\build.ps1 -OutputDirectory artifacts\staging-performance
 .\tests\MeasureObsPerformance.ps1 -AssemblyPath artifacts\staging-performance\NoteView.exe -Label current

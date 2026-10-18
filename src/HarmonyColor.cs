@@ -73,22 +73,35 @@ namespace NoteView
             current = Current(now);
             HistoryStrength = hasHistory ? Smooth(Clamp(1 - (now - transitionAt) / 3.2)) : 0;
             Tone accent = motion;
-            double outsideWeight = 0;
-            foreach (ActiveNote note in sounding.OrderBy(n => n.Number))
+            double outsideWeight = 0, extensionWeight = 0, accentWeight = 0;
+            var pitchWeights = new double[12];
+            foreach (ActiveNote note in sounding)
             {
-                if (basis == null || (basisMask & (1 << (note.Number % 12))) != 0) continue;
+                int pitch = note.Number % 12;
+                if (basis == null || (coreMask & (1 << pitch)) != 0) continue;
                 double weight = note.IsHeld ? 1 : Clamp(note.Brightness) * .5;
-                if (weight <= 0) continue;
-                Tone tint = PitchAccent(note.Number % 12, target);
-                accent = outsideWeight == 0 ? tint : Blend(accent, tint, weight / (outsideWeight + weight));
-                outsideWeight += weight;
+                // An octave doubling reinforces the same harmonic color; it is
+                // not an additional extension or an extra source of tension.
+                pitchWeights[pitch] = Math.Max(pitchWeights[pitch], weight);
             }
-            double wantedVariation = Clamp(outsideWeight);
+            for (int pitch = 0; pitch < pitchWeights.Length; pitch++)
+            {
+                bool extension = (basisMask & (1 << pitch)) != 0;
+                double weight = pitchWeights[pitch] * (extension ? .4 : 1);
+                if (weight <= 0) continue;
+                Tone tint = PitchAccent(pitch, target);
+                accent = accentWeight == 0 ? tint : Blend(accent, tint, weight / (accentWeight + weight));
+                accentWeight += weight;
+                if (extension) extensionWeight += weight; else outsideWeight += weight;
+            }
+            // Sounding sevenths and upper extensions keep a softer second color
+            // after historical motion fades. A passing tone remains more emphatic.
+            double wantedVariation = Clamp(outsideWeight + Math.Min(.7, extensionWeight));
             variation = Approach(variation, wantedVariation, dt, .22);
             if (Math.Abs(variation - wantedVariation) < .002) variation = wantedVariation;
             VariationStrength = variation;
-            // Preserve the passing tone's hue during its short visual release.
-            if (outsideWeight > 0) relation = accent;
+            // Preserve the contributing tones' hue during their short visual release.
+            if (accentWeight > 0) relation = accent;
             else if (variation == 0) relation = motion;
 
             double energy = basis == null || sounding.Count == 0 ? 0 :

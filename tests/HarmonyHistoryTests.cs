@@ -29,6 +29,7 @@ namespace NoteView
             Test("Minor foundation and fresh voicing", MinorFoundation);
             Test("History and common-tone continuity", HistoryContinuity);
             Test("Same destination, different harmonic history", SameDestinationDifferentHistory);
+            Test("Stable extensions retain a softer second color", StableExtensionColor);
             Test("Pending harmony cancellation", PendingCancellation);
             Test("Velocity and note-order invariance", VelocityAndOrder);
             Test("Silence and new phrase", SilenceAndNewPhrase);
@@ -144,6 +145,62 @@ namespace NoteView
             Check(r.Engine.Group == "0:major", "second appearance cannot reuse an abandoned confirmation timer");
             r.Advance(.125);
             Check(r.Engine.Group == "9:minor", "new candidate eventually receives its own full confirmation interval");
+        }
+
+        private static void StableExtensionColor()
+        {
+            int[][] voicings = {
+                new[] { 48, 52, 55, 59 },
+                new[] { 48, 52, 55, 58, 62 },
+                new[] { 48, 52, 55, 58, 62, 65 },
+                new[] { 48, 52, 55, 58, 62, 65, 69 }
+            };
+            string[] qualities = { "maj7", "9", "11", "13" };
+            for (int i = 0; i < voicings.Length; i++)
+            {
+                var r = new Rig(); r.Replace(60, 63, 67); r.Advance(2);
+                r.Replace(voicings[i]); r.Advance(5);
+                Check(r.Engine.Chord.Root == 0 && r.Engine.Chord.Quality == qualities[i], "extended harmony is recognized " + qualities[i]);
+                Check(r.Engine.HistoryStrength == 0 && r.Engine.VariationStrength >= .39 && r.Engine.VariationStrength <= .7,
+                    "sounding extensions retain softer variation after history ends " + qualities[i]);
+                Check(r.Engine.RelationHex != r.Engine.Hex, "stable extension has a distinct second color " + qualities[i]);
+                var doubled = new Rig(); doubled.Replace(60, 63, 67); doubled.Advance(2);
+                doubled.Replace(voicings[i].Concat(voicings[i].Select(n => n + 12)).ToArray()); doubled.Advance(5);
+                Check(doubled.Engine.VariationStrength == r.Engine.VariationStrength && doubled.Engine.RelationHex == r.Engine.RelationHex,
+                    "octave doubling cannot increase extension complexity or change its hue " + qualities[i]);
+                var oneDoubled = new Rig(); oneDoubled.Replace(60, 63, 67); oneDoubled.Advance(2);
+                oneDoubled.Replace(voicings[i].Concat(new[] { voicings[i].Last() + 12 }).ToArray()); oneDoubled.Advance(5);
+                Check(oneDoubled.Engine.VariationStrength == r.Engine.VariationStrength && oneDoubled.Engine.RelationHex == r.Engine.RelationHex,
+                    "doubling one extension cannot bias the blended hue " + qualities[i]);
+            }
+            foreach (int[] triad in new[] { new[] { 60, 64, 67 }, new[] { 60, 63, 67 }, new[] { 60, 63, 66 }, new[] { 60, 64, 68 } })
+            {
+                var r = new Rig(); r.Replace(triad); r.Advance(5);
+                Check(r.Engine.VariationStrength == 0 && r.Engine.HistoryStrength == 0, "pure triad has no invented second layer");
+            }
+            var passing = new Rig(); passing.Replace(60, 64, 67); passing.Advance(2); passing.Strike(66); passing.Advance(2);
+            Check(passing.Engine.VariationStrength > .95, "passing note remains stronger than stable extensions");
+            var pedal = new Rig(); pedal.Replace(voicings[0]); pedal.Advance(5);
+            var softPedal = pedal.Colored().Select(Clone).ToList();
+            foreach (var n in softPedal) { n.IsHeld = false; n.Brightness = .1; }
+            AdvanceSnapshot(pedal, softPedal, 2);
+            Check(pedal.Engine.VariationStrength > 0 && pedal.Engine.VariationStrength < .03,
+                "quiet pedal extensions use normalized decay instead of their original strike velocity");
+            foreach (var n in softPedal) n.Brightness = 0;
+            AdvanceSnapshot(pedal, softPedal, 2);
+            Check(pedal.Engine.VariationStrength == 0, "inaudible extensions stop contributing a second color");
+            var soft = new Rig(20); var loud = new Rig(120);
+            soft.Replace(voicings[3]); loud.Replace(voicings[3]); CompareSequence(soft, loud, 160);
+            soft.Pedal(true); loud.Pedal(true);
+            foreach (int n in voicings[3]) { soft.Off(n); loud.Off(n); }
+            CompareSequence(soft, loud, 120);
+        }
+
+        private static void AdvanceSnapshot(Rig r, IList<ActiveNote> notes, double duration)
+        {
+            double end = r.Now + duration;
+            while (r.Now < end - .000000001)
+            { r.Now = Math.Min(end, r.Now + .025); r.Engine.Update(notes, true); }
         }
 
         private static void SameDestinationDifferentHistory()

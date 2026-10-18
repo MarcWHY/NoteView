@@ -16,7 +16,7 @@ Windows x64，需要 .NET Framework 4.8 和可用的 MIDI 输入设备。
 6. 在谱面上方的调式下拉框，或 **设置 → 默认调式** 中选择调式。支持 15 种调号对应的大调、小调，共 30 个选项；选择后即时生效并保存。
 7. 点击窗口顶部的 **调整布局**：绿色矩形是整个布局画布，五线谱、键盘和和弦各有独立边框。拖动对应框内区域移动控件，拖右下角手柄或滚轮等比例缩放；点击 **完成调整** 或按 Esc 退出。三个控件均可移动到画布的其他区域，边框会限制在画布内。布局自动保存，OBS 使用相同的位置和大小。设置中也可分别精确调整、复位。
 
-和声配色有时间记忆：变化音可以独立染色，基底里的共同音保持连续，换和弦时旧色以渐变的形式短暂保留。背景同步出现很淡的局部柔光；在 **设置 → 和声氛围强度** 中调整，设为 0 可关闭。更多示例见 [和声配色](docs/HARMONY_COLORS.md)。
+和声配色有时间记忆：变化音可以独立染色，基底里的共同音保持连续，换和弦时旧色以渐变的形式短暂保留。背景将基底、副色和历史余色分成错开交叠的柔光；七、九、十一、十三等扩展音持续带出副色，复杂和声稳定按住时也有多色层次。在 **设置 → 和声氛围强度** 中调整，设为 0 可关闭。更多示例见 [和声配色](docs/HARMONY_COLORS.md)。
 
 ## 常用操作
 
@@ -89,6 +89,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\TestObsWorker.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\TestObsOutputServer.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\TestObsIntegration.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\TestHarmonyHistory.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\TestAtmosphereVisual.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\ListMidi.ps1
 ```
 
