@@ -49,6 +49,7 @@ namespace NoteView
         private bool obsDirty = true;
         private string obsError = "";
         private Forms.NotifyIcon tray;
+        private System.Drawing.Icon trayIcon;
         private SettingsWindow settingsWindow;
         private bool fillingDevices, manualDisconnect, closing, demo, dirty = true, clickThrough;
         private bool hotkeyRegistered;
@@ -68,6 +69,7 @@ namespace NoteView
             preview = previewMode;
             Settings = preview ? new AppSettings() : AppSettings.Load();
             Title = "NoteView · 钢琴桌面五线谱";
+            Icon = AppIcon.LoadWindowIcon();
             Width = Settings.Width; Height = Settings.Height;
             MinWidth = 880; MinHeight = 640;
             WindowStyle = WindowStyle.None;
@@ -714,7 +716,8 @@ namespace NoteView
         }
         private void CreateTray()
         {
-            tray = new Forms.NotifyIcon { Icon = System.Drawing.SystemIcons.Information, Text = "NoteView · 钢琴五线谱", Visible = true };
+            trayIcon = AppIcon.LoadTrayIcon();
+            tray = new Forms.NotifyIcon { Icon = trayIcon, Text = "NoteView · 钢琴五线谱", Visible = true };
             var menu = new Forms.ContextMenuStrip();
             menu.Items.Add("显示 / 找回窗口", null, delegate { RestoreWindow(); });
             menu.Items.Add("设置", null, delegate { RestoreWindow(); ShowSettings(); });
@@ -761,7 +764,8 @@ namespace NoteView
             StopObsOutput();
             if (settingsWindow != null) settingsWindow.Close();
             Disconnect();
-            if (tray != null) { tray.Visible = false; tray.Dispose(); }
+            if (tray != null) { tray.Visible = false; tray.Dispose(); tray = null; }
+            if (trayIcon != null) { trayIcon.Dispose(); trayIcon = null; }
             if (hotkeyRegistered) UnregisterHotKey(hwnd, 1);
             SaveSettings();
         }

@@ -1,6 +1,10 @@
 ﻿# NoteView · 钢琴桌面五线谱
 
+<img src="assets/branding/noteview-256.png" width="96" height="96" alt="NoteView logo" />
+
 一个 Windows 独立桌面挂件。连接 USB MIDI 电钢琴后，竖列大谱表和琴键同步点亮；和声基底、变化音与前一和声的余韵共同决定色彩，击键力度决定亮度，并随时间自然衰减。
+
+标志由两枚音符组成字母 N，以五线谱和暖金、浅紫、青绿的渐变呼应和声显示。[下载矢量标志与图标](docs/BRANDING.md)。
 
 ## 直接使用
 

@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" fill="none">
+  <title>NoteView</title>
+  <desc>Two musical notes form an N over five staff lines. Warm gold blends through lilac into jade.</desc>
+  <defs>
+    <linearGradient id="surface" x1="36" y1="16" x2="220" y2="246" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#182936"/><stop offset="1" stop-color="#09151E"/>
+    </linearGradient>
+    <linearGradient id="ink" x1="91" y1="71" x2="171" y2="186" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F4C783"/><stop offset=".47" stop-color="#DCBDE0"/><stop offset="1" stop-color="#78E5D5"/>
+    </linearGradient>
+    <linearGradient id="staff" x1="38" y1="0" x2="218" y2="0" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#B5CCD3" stop-opacity="0"/><stop offset=".18" stop-color="#B5CCD3" stop-opacity=".36"/>
+      <stop offset=".82" stop-color="#B5CCD3" stop-opacity=".36"/><stop offset="1" stop-color="#B5CCD3" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="warm"><stop stop-color="#E9B775" stop-opacity=".16"/><stop offset="1" stop-color="#E9B775" stop-opacity="0"/></radialGradient>
+    <radialGradient id="cool"><stop stop-color="#61D9D1" stop-opacity=".14"/><stop offset="1" stop-color="#61D9D1" stop-opacity="0"/></radialGradient>
+  </defs>
+  <g id="tile">
+    <rect x="8" y="8" width="240" height="240" rx="54" fill="url(#surface)"/>
+    <ellipse cx="89" cy="85" rx="81" ry="77" fill="url(#warm)"/>
+    <ellipse cx="166" cy="171" rx="82" ry="77" fill="url(#cool)"/>
+    <rect x="8.75" y="8.75" width="238.5" height="238.5" rx="53.25" stroke="#BDD5DC" stroke-opacity=".15" stroke-width="1.5"/>
+  </g>
+  <g id="staves" stroke="url(#staff)" stroke-width="2" stroke-linecap="round">
+    <path d="M38 85H218 M38 107H218 M38 129H218 M38 151H218 M38 173H218"/>
+  </g>
+  <g id="notes" fill="url(#ink)" stroke="url(#ink)">
+    <path d="M91 174V71L174 174V71" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <ellipse cx="76" cy="176" rx="22" ry="15.5" transform="rotate(-22 76 176)" stroke="none"/>
+    <ellipse cx="159" cy="176" rx="22" ry="15.5" transform="rotate(-22 159 176)" stroke="none"/>
+  </g>
+</svg>
